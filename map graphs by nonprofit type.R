@@ -4,6 +4,8 @@ library(janitor)
 library(scales)
 library(dplyr)
 library(usmap)
+library(plotly)
+
 data2024 <- YEAR_04_DATA_PUF |> clean_names()
 view(data2024)
 
@@ -91,3 +93,168 @@ compare_map <- plot_usmap(data = map_data_all, values = "percent", regions = "st
   ) +
   theme_minimal() +
   theme(strip.text = element_text(size = 12, face = "bold"))
+####
+## making it a plotly graph 
+map_data_all <- custom_regions |>
+  full_join(region_summary_all, by = "region", relationship = "many-to-many") |>
+  mutate(
+    percent_label = paste0(round(percent, 1), "%"),
+    count_label = paste0("n=", round(weighted_count)),
+    abbr = state  # this is what Plotly needs to place states
+  )
+#### filtering for a certain type 
+type_data_pu <- map_data_all |>
+  filter(ntmaj12 == "PU")
+
+pu_maply <- plot_ly(
+  data = type_data_pu,
+  type = "choropleth",
+  locationmode = "USA-states",
+  locations = ~abbr,
+  z = ~percent,
+  text = ~paste("Region:", region,
+                "<br>Type:", ntmaj12,
+                "<br>Percent:", percent_label,
+                "<br>", count_label),
+  colorscale = "YlGnBu",
+  colorbar = list(title = "Percent"),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "Proportion of PU Nonprofits by Census Region",
+    geo = list(scope = "usa")
+  )
+###
+type_data_ed <- map_data_all |>
+  filter(ntmaj12 == "ED")
+
+ed_maply <- plot_ly(
+  data = type_data_ed,
+  type = "choropleth",
+  locationmode = "USA-states",
+  locations = ~abbr,
+  z = ~percent,
+  text = ~paste("Region:", region,
+                "<br>Type:", ntmaj12,
+                "<br>Percent:", percent_label,
+                "<br>", count_label),
+  colorscale = "YlGnBu",
+  colorbar = list(title = "Percent"),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "Proportion of ED Nonprofits by Census Region",
+    geo = list(scope = "usa")
+  )
+###
+type_data_ar <- map_data_all |>
+  filter(ntmaj12 == "AR")
+
+ar_maply <- plot_ly(
+  data = type_data_ar,
+  type = "choropleth",
+  locationmode = "USA-states",
+  locations = ~abbr,
+  z = ~percent,
+  text = ~paste("Region:", region,
+                "<br>Type:", ntmaj12,
+                "<br>Percent:", percent_label,
+                "<br>", count_label),
+  colorscale = "YlGnBu",
+  colorbar = list(title = "Percent"),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "Proportion of AR Nonprofits by Census Region",
+    geo = list(scope = "usa")
+  )
+###
+type_data_he <- map_data_all |>
+  filter(ntmaj12 == "HE")
+
+he_maply <- plot_ly(
+  data = type_data_he,
+  type = "choropleth",
+  locationmode = "USA-states",
+  locations = ~abbr,
+  z = ~percent,
+  text = ~paste("Region:", region,
+                "<br>Type:", ntmaj12,
+                "<br>Percent:", percent_label,
+                "<br>", count_label),
+  colorscale = "YlGnBu",
+  colorbar = list(title = "Percent"),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "Proportion of HE Nonprofits by Census Region",
+    geo = list(scope = "usa")
+  )
+###
+type_data_hu <- map_data_all |>
+  filter(ntmaj12 == "HU")
+
+hu_maply <- plot_ly(
+  data = type_data_hu,
+  type = "choropleth",
+  locationmode = "USA-states",
+  locations = ~abbr,
+  z = ~percent,
+  text = ~paste("Region:", region,
+                "<br>Type:", ntmaj12,
+                "<br>Percent:", percent_label,
+                "<br>", count_label),
+  colorscale = "YlGnBu",
+  colorbar = list(title = "Percent"),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "Proportion of HU Nonprofits by Census Region",
+    geo = list(scope = "usa")
+  )
+####
+type_data_re <- map_data_all |>
+  filter(ntmaj12 == "RE")
+
+re_maply <- plot_ly(
+  data = type_data_re,
+  type = "choropleth",
+  locationmode = "USA-states",
+  locations = ~abbr,
+  z = ~percent,
+  text = ~paste("Region:", region,
+                "<br>Type:", ntmaj12,
+                "<br>Percent:", percent_label,
+                "<br>", count_label),
+  colorscale = "YlGnBu",
+  colorbar = list(title = "Percent"),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "Proportion of RE Nonprofits by Census Region",
+    geo = list(scope = "usa")
+  )
+###
+type_data_en <- map_data_all |>
+  filter(ntmaj12 == "EN")
+
+en_maply <- plot_ly(
+  data = type_data_en,
+  type = "choropleth",
+  locationmode = "USA-states",
+  locations = ~abbr,
+  z = ~percent,
+  text = ~paste("Region:", region,
+                "<br>Type:", ntmaj12,
+                "<br>Percent:", percent_label,
+                "<br>", count_label),
+  colorscale = "YlGnBu",
+  colorbar = list(title = "Percent"),
+  hoverinfo = "text"
+) %>%
+  layout(
+    title = "Proportion of EN Nonprofits by Census Region",
+    geo = list(scope = "usa")
+  )
+
+
