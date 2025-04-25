@@ -1,0 +1,1270 @@
+---
+title: "04 dataset visualizations"
+output: html_document
+date: "2025-04-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggrepel)
+
+```
+
+
+
+```{r 1 - read csv}
+
+data04 <- read_csv("YEAR-04-DATA-PUF.csv")
+
+```
+
+## CEO race data - Pie chart
+
+The majority of nonprofit CEOs are White, with 75% of the organizations reporting White CEOs. 
+This seems to be a statistic that is representative of the US population, as 75.3% of Americans identify as white (https://www.census.gov/quickfacts/fact/table/US/PST045224)
+
+
+```{r - race data}
+
+
+race_labels <- c(
+  "1" = "Asian or Pacific Islander",
+  "2" = "Black or African American",
+  "3" = "Hispanic or Latino",
+  "4" = "Native American",
+  "5" = "White",
+  "6" = "Multiracial",
+  "7" = "Other"
+)
+
+
+data04 <- data04 |>
+  filter(!is.na(CEOrace)) |>
+  mutate(ceo_race_label = recode(as.character(CEOrace), !!!race_labels))
+
+#percentages
+
+race_counts <- data04 |>
+  count(ceo_race_label) |>
+  mutate(perc = n / sum(n) * 100,
+         label = paste0(ceo_race_label, ": ", round(perc, 1), "%"))
+
+# Adjusting label positions
+df2 <- race_counts |>
+  mutate(csum = rev(cumsum(rev(perc))), 
+         pos = perc / 2 + lead(csum, 1),
+         pos = if_else(is.na(pos), perc / 2, pos))
+
+# pie chart with softer colors, label adjustments, and new legend title
+ggplot(race_counts, aes(x = "", y = perc, fill = ceo_race_label)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  labs(title = "CEO Racial Demographics in Nonprofit Organizations", 
+       fill = "Race") +  # Change legend title to "Race"
+  theme_void() +
+  geom_label_repel(data = df2, 
+                   aes(y = pos, label = paste0(round(perc, 1), "%")),
+                   size = 4, 
+                   nudge_x = 1, 
+                   show.legend = FALSE) +
+  scale_fill_brewer(palette = "Pastel1")  # Softer color palette
+
+```
+
+
+
+
+## CEO gender data- Pie chart 
+
+The high proportion of female CEOs could reflect broader trends in nonprofit sectors that are often seen as more women-focused, especially in fields like Human Services and Education. (Something to do additional searching on!) 
+```{r - CEO gender}
+
+
+df_gender <- data04 |>
+  select(CEOgender_Man, CEOgender_Woman, CEOgender_Trans, 
+         CEOgender_NB, CEOgender_Oth)
+
+df_gender_long <- df_gender |>
+  pivot_longer(cols = everything(), names_to = "gender_column", values_to = "gender_value")
+
+df_gender_long1 <- df_gender_long |>
+  filter(gender_value == "1")
+
+df_gender_long2 <- df_gender_long1 |>
+  mutate(gender_value = case_when(
+    gender_column == "CEOgender_Man" ~ "Male",
+    gender_column == "CEOgender_Woman" ~ "Female",
+    gender_column == "CEOgender_Trans" ~ "Transgender",
+    gender_column == "CEOgender_NB" ~ "Nonbinary",
+    gender_column == "CEOgender_Oth" ~ "Other",
+    TRUE ~ NA_character_
+  )) 
+
+gender_counts <- df_gender_long2 |>
+  count(gender_value, name = "count") |>
+  mutate(percentage = count / sum(count) * 100)
+
+# label positions 
+df2 <- gender_counts |>
+  mutate(csum = rev(cumsum(rev(percentage))), 
+         pos = percentage / 2 + lead(csum, 1),
+         pos = if_else(is.na(pos), percentage / 2, pos))
+
+
+ggplot(gender_counts, aes(x = "", y = percentage, fill = gender_value)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  theme_void() +
+  labs(title = "Gender Identity Distribution of Nonprofit CEOs", 
+       fill = "Gender Identity") +  # Change legend title here
+  geom_label_repel(data = df2, 
+                   aes(y = pos, label = paste0(round(percentage, 1), "%")),
+                   size = 4.5, 
+                   nudge_x = 1, 
+                   show.legend = FALSE) +
+  scale_fill_brewer(palette = "Pastel1") # Optional: Change color palette
+
+
+
+```
+
+
+## Most Common Revenue Sources - bar chart
+The primary source of revenue is Donations from Individuals, followed by Grants. 
+
+
+```{r }
+
+
+data04 |>
+  summarise(
+    Donations_from_Individuals = sum(Affiliation_Members_IndivDon, na.rm = TRUE),
+    Donations_from_Corporations = sum(Affiliation_Members_CorpDon, na.rm = TRUE),
+    Grants = sum(Affiliation_Members_Grants, na.rm = TRUE),
+    Earned_Revenue = sum(Affiliation_Members_EarnedRev, na.rm = TRUE),
+    Membership_Dues = sum(Affiliation_Members_Dues, na.rm = TRUE),
+    Funding_from_Affiliates = sum(Affiliation_Members_Affiliated, na.rm = TRUE),
+    Other = sum(Affiliation_Members_Other, na.rm = TRUE)
+  ) |>
+  pivot_longer(everything(), names_to = "Revenue_Source", values_to = "Count") |>
+  ggplot(aes(x = reorder(Revenue_Source, Count), y = Count)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Most Common Revenue Sources",
+       x = "Revenue Source",
+       y = "Number of Organizations") +
+  theme_minimal()
+
+
+
+```
+
+
+## Revenue Source Distribution - pie chart
+
+Continuation of what we see above:
+Donations from Individuals contribute to 22.5% of the revenue, followed by Grants (20%) and Membership Dues (17.5%). 
+
+This suggests that these organizations are primarily funded through a combination of donations and grant funding. This indicates that nonprofits have a strong reliance on individuals to support them. 
+
+```{r - pie chart rev dist }
+
+data04 |>
+  summarise(
+    Donations_from_Individuals = sum(Affiliation_Members_IndivDon, na.rm = TRUE),
+    Donations_from_Corporations = sum(Affiliation_Members_CorpDon, na.rm = TRUE),
+    Grants = sum(Affiliation_Members_Grants, na.rm = TRUE),
+    Earned_Revenue = sum(Affiliation_Members_EarnedRev, na.rm = TRUE),
+    Membership_Dues = sum(Affiliation_Members_Dues, na.rm = TRUE),
+    Funding_from_Affiliates = sum(Affiliation_Members_Affiliated, na.rm = TRUE),
+    Other = sum(Affiliation_Members_Other, na.rm = TRUE)
+  ) |>
+  pivot_longer(everything(), names_to = "Revenue_Source", values_to = "Count") |>
+  mutate(Percentage = Count / sum(Count) * 100,
+         Label = paste0(Revenue_Source, ": ", round(Percentage, 1), "%")) |>
+  ggplot(aes(x = "", y = Count, fill = Revenue_Source)) +
+  geom_col(width = 1) +
+  coord_polar("y") +
+  theme_void() +
+  geom_text(aes(label = Label),
+            position = position_stack(vjust = 0.5), size = 3) +
+  labs(title = "Revenue Source Distribution Among 501(c)(4)s")
+
+```
+
+
+## Percent of Nonprofits Receiving Government Grants/Contracts - bar chart
+
+This graph shows the percentage of nonprofit organizations that receive funding from the local, state, and federal governments. As we can see, local government is the most common source of government support, with more than 50% of organizations receiving funding at this level. State government grants come second, followed by federal grants.
+
+It’s important to note that these percentages reflect the average proportion of organizations within the dataset that receive funding at each level, not a sum of total funding across all levels. This suggests that many nonprofits rely heavily on local government support, particularly for sectors that provide community-based services.
+
+```{r bar chart}
+
+
+data04 |>
+  summarise(
+    Local = mean(LocalGov, na.rm = TRUE) * 100,
+    State = mean(StateGov, na.rm = TRUE) * 100,
+    Federal = mean(FederalGov, na.rm = TRUE) * 100
+  ) |>
+  pivot_longer(everything(), names_to = "GovLevel", values_to = "Proportion") |>
+  ggplot(aes(x = GovLevel, y = Proportion)) +
+  geom_col(fill = "darkgreen") +
+  labs(title = "Percent of Organizations Receiving Government Grants/Contracts",
+       x = "Level of Government",
+       y = "Percent") +
+  theme_minimal()
+
+
+
+```
+## Largest Source of Revenue - Bar Chart
+
+
+We see that private funding is the largest source of revenue. This could be true because smaller nonprofits or those focused on niche services are more likely to be funded privately. 
+
+Although less dominant, government agencies also represent a significant source of revenue. This could be true for larger organizations that are involved in advocacy that aligns with government priorities.
+```{r distribution}
+
+data04 |>
+  count(LargestRev) |>
+  mutate(Percentage = n / sum(n) * 100) |>
+  ggplot(aes(x = reorder(LargestRev, -Percentage), y = Percentage)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Largest Source of Revenue (501c4s)",
+       x = "Revenue Source",
+       y = "Percent of Orgs") +
+  theme_minimal()
+
+
+
+
+```
+
+## Government Support by Primary Revenue Source - bar chart
+
+The second graph shows that larger nonprofits are more likely to have access to government funding, particularly at the state and local levels. This could be due to their larger scale, which may make them more capable of fulfilling government contracts or be more reliable in their ability to reach more people, which would be more desirable to fund if you were a government agent with an alloted amount of funding to give out.
+
+
+```{r Gov support and primary rev source}
+
+
+# graph 1 shows the types of government support. 
+data04 |>
+  filter(!is.na(LargestRev)) |>
+  group_by(LargestRev) |>
+  summarise(
+    Local = mean(LocalGov, na.rm = TRUE),
+    State = mean(StateGov, na.rm = TRUE),
+    Federal = mean(FederalGov, na.rm = TRUE)
+  ) |>
+  pivot_longer(-LargestRev, names_to = "GovLevel", values_to = "Proportion") |>
+  ggplot(aes(x = GovLevel, y = Proportion * 100, fill = LargestRev)) +
+  geom_col(position = "dodge") +
+  labs(title = "Goverment Support by Primary Revenue Source",
+       y = "Percent Receiving Funding",
+       x = "Government Level") +
+  theme_minimal()
+
+
+## Graph 2 shows us clear trends- large nonprofits receive highest % of government support at all levels (local, state, federal)
+
+
+data04 |>
+  filter(!is.na(LargestRev), !is.na(TotRev_clean_nozero)) |>
+  mutate(
+
+    
+# To categorize nonprofits by revenue size
+    RevenueCategory = case_when(
+      TotRev_clean_nozero < 100000 ~ "Small",
+      TotRev_clean_nozero >= 100000 & TotRev_clean_nozero < 1000000 ~ "Medium",
+      TotRev_clean_nozero >= 1000000 ~ "Large"
+    )
+  ) |>
+  group_by(RevenueCategory, LargestRev) |>
+  summarise(
+    
+    
+# To calculate the average proportion of government funding by level
+    
+    
+    Local = mean(LocalGov, na.rm = TRUE),
+    State = mean(StateGov, na.rm = TRUE),
+    Federal = mean(FederalGov, na.rm = TRUE),
+    .groups = "drop"  
+    
+# Drop grouping after summarizing
+
+  ) |>
+  pivot_longer(cols = c(Local, State, Federal), names_to = "GovLevel", values_to = "Proportion") |>
+  ggplot(aes(x = GovLevel, y = Proportion * 100, fill = RevenueCategory)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Government Support by Revenue Size and Primary Revenue Source",
+    y = "Percent Receiving Funding",
+    x = "Government Level"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  
+  )
+
+
+
+```
+
+```{r - 5 }
+data04 |>
+  mutate(GovSupport = pmax(LocalGov, StateGov, FederalGov, na.rm = TRUE)) |>
+  group_by(LargestRev) |>
+  summarise(Percent_with_GovSupport = mean(GovSupport, na.rm = TRUE) * 100)
+
+
+```
+
+
+
+## Proportion of Total Fundraising Expenses by group
+
+- the majority of organizations report that their fundraising expenses have stayed the same (yellow section), with proportions near 50% or higher for most sector groups.
+
+- some sectors (like Human Services) that show a higher percentage of organizations experiencing an increase in their fundraising expenses from 2022 to 2023 (green and blue sections). Could be due to nonprofits in these sectors investing more in fundraising activities due to growing needs, or expanding programs. 
+
+- sectors like Public, Societal Benefit and Religion Related that show higher proportions of organizations with decreasing fundraising expenses (red and orange sections). These sectors may be facing challenges in raising funds, or services become less of a need. 
+
+```{r Fundraising expenses by sector}
+
+
+# Clean the data: Convert 97 and 98 to NA, and convert to factor
+data04_cleaned <- data04 |>
+  mutate(across(contains("FndRaise_"), ~na_if(., 97), .names = "cleaned_{col}")) |>
+  mutate(across(contains("FndRaise_"), ~na_if(., 98), .names = "cleaned_{col}")) |>
+  mutate(across(contains("FndRaise_"), as.factor, .names = "factor_{col}"))
+
+# Step 1: Re-code sector codes to broader groups
+
+data04_cleaned$sector_group <- recode(data04_cleaned$ntee1,
+                                      A = "I.", B = "II.", C = "III.", D = "III.",
+                                      E = "IV.", F = "IV.", G = "IV.", H = "IV.",
+                                      I = "V.", J = "V.", K = "V.", L = "V.",
+                                      M = "V.", N = "V.", O = "V.", P = "V.",
+                                      Q = "VI.", R = "VII.", S = "VII.", T = "VII.",
+                                      U = "VII.", V = "VII.", W = "VII.",
+                                      X = "VIII.", Y = "IX.", Z = "X.")
+
+
+
+# Step 2: Handle any missing or invalid values in sector_group (if needed)
+data04_cleaned$sector_group <- ifelse(is.na(data04_cleaned$sector_group), "Unknown", data04_cleaned$sector_group)
+
+
+
+# Step 3: Convert FndRaise_TotExp into a factor for visualization
+data04_cleaned$factor_FndRaise_TotExp <- factor(data04_cleaned$FndRaise_TotExp, 
+                                                 levels = c(1, 2, 3, 4, 5), 
+                                                 labels = c("Significantly Decrease", "Moderately Decrease", "Same", 
+                                                            "Moderately Increase", "Significantly Increase"))
+
+# Step 4: Define sector labels for x-axis (Roman numerals with full descriptions)
+sector_labels <- c(
+  "I." = "Arts, Culture, and Humanities",
+  "II." = "Education",
+  "III." = "Environment and Animals",
+  "IV." = "Health",
+  "V." = "Human Services",
+  "VI." = "International, Foreign Affairs",
+  "VII." = "Public, Societal Benefit",
+  "VIII." = "Religion Related",
+  "IX." = "Mutual/Membership Benefit",
+  "X." = "Unknown, Unclassified"
+)
+
+# Create the plot 
+ggplot(data04_cleaned, aes(x = sector_group, fill = factor_FndRaise_TotExp)) +
+  geom_bar(position = "fill") +
+  labs(title = "Total Fundraising Expenses by Sector Group (Proportions)",
+       x = "Sector Group", y = "Proportion of Responses") +
+  scale_fill_manual(values = c("red", "orange", "yellow", "green", "blue", "gray"),
+                    labels = c("Significantly Decrease", "Moderately Decrease", "Same", "Moderately Increase", "Significantly Increase", "NA")) +
+  scale_x_discrete(labels = sector_labels) +  # Use Roman numerals with full descriptions
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),  # Rotate labels for readability
+    plot.margin = margin(r = 50)  # Increase right margin for label spacing
+  )
+
+
+
+
+```
+
+
+# SAME PLOT- no NA values. Proportion of Total Fundraising Expenses by group
+```{r Fundraising expenses by sector no NA}
+
+# Filter out rows with NA values in sector_group or factor_FndRaise_TotExp
+data04_cleaned <- data04_cleaned |>
+  filter(!is.na(sector_group) & !is.na(factor_FndRaise_TotExp))
+
+# Then proceed with creating the plot
+ggplot(data04_cleaned, aes(x = sector_group, fill = factor_FndRaise_TotExp)) +
+  geom_bar(position = "fill") +
+  labs(title = "Total Fundraising Expenses by Sector Group (Proportions)",
+       x = "Sector Group", y = "Proportion of Responses") +
+  scale_fill_manual(values = c("red", "orange", "yellow", "green", "blue"),
+                    labels = c("Significantly Decrease", "Moderately Decrease", "Same", 
+                               "Moderately Increase", "Significantly Increase")) +
+  scale_x_discrete(labels = sector_labels) +  # Use Roman numerals with full descriptions
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),  # Rotate labels for readability
+    plot.margin = margin(r = 50)  # Increase right margin for label spacing
+  )
+
+
+
+```
+
+
+# SAME PLOT- no NA values and WITH %. Proportion of Total Fundraising Expenses by group
+
+```{r Fundraising expenses by sector w percent}
+
+
+
+# Adjust y-position more accurately for all bar segments
+plot_data <- data04_cleaned |>
+  group_by(sector_group, factor_FndRaise_Overall_Chng) |>
+  tally() |>  # Count the number of responses for each combination
+  group_by(sector_group) |>
+  mutate(
+    percentage = n / sum(n) * 100,  # Calculate the percentage
+    ypos = (cumsum(percentage) - percentage / 2)  # Refine label position
+  ) |>
+  ungroup()
+
+# Create the plot with improved alignment logic
+ggplot(plot_data, aes(x = sector_group, y = percentage, fill = factor_FndRaise_Overall_Chng)) +
+  geom_bar(stat = "identity", position = "stack") +  # Stacked bar chart
+  geom_text(
+    aes(label = scales::percent(percentage / 100, accuracy = .1), y = ypos), 
+    size = 3, color = "black"  # Improved label placement
+  ) +
+  labs(
+    title = "Total Fundraising Expenses by Sector Group (Proportions)",
+    x = "Sector Group", y = "Proportion of Responses"
+  ) +
+  scale_fill_manual(
+    values = c("red", "orange", "yellow", "green", "blue"),
+    labels = c("Significantly Decrease", "Moderately Decrease", "Same", 
+               "Moderately Increase", "Significantly Increase")
+  ) +
+  scale_x_discrete(labels = sector_labels) +  # Use Roman numerals with full descriptions
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),  # Rotate labels for readability
+    plot.margin = margin(r = 50)  # Increase right margin for label spacing
+  )
+
+
+```
+
+
+
+## Where nonprofits recieved funding from- new pie chart (not working)
+
+```{r Where nonprofit recieved funding from}
+
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(ggrepel)
+
+# Read and select relevant columns
+dataRcv <- read_csv("YEAR-04-DATA-PUF.csv")
+
+dataRcv <- dataRcv %>%
+  select(ntee1, 
+         FndRaise_LocGvtGrnt_Rcv, FndRaise_StateGvtGrnt_Rcv, FndRaise_FedGvtGrnt_Rcv,
+         FndRaise_LocGvtCntrct_Rcv, FndRaise_StateGvtCntrct_Rcv, FndRaise_FedGvtCntrct_Rcv,
+         FndRaise_PFGrnt_Rcv, FndRaise_CFGrnt_Rcv, FndRaise_DAF_Rcv, 
+         FndRaise_Corp_Found_Grnt_Rcv, FndRaise_UntdWy_Rcv, FndRaise_CombFedCmpgn_Rcv,
+         FndRaise_OthrGvngPrgrm_Rcv)
+
+# Reshape data to long format
+dataRcv_long <- dataRcv %>%
+  pivot_longer(cols = starts_with("FndRaise_"), names_to = "Rcv_column", values_to = "Rcv_value")
+
+# Filter for rows where the organization receives funding (Rcv_value == 1)
+dataRcv_long1 <- dataRcv_long %>%
+  filter(Rcv_value == 1)
+
+# Re-coding the funding categories to more human-readable labels
+dataRcv_long2 <- dataRcv_long1 %>%
+  mutate(Rcv_value = case_when(
+    Rcv_column == "FndRaise_LocGvtGrnt_Rcv" ~ "Local government grants",
+    Rcv_column == "FndRaise_StateGvtGrnt_Rcv" ~ "State government grants",
+    Rcv_column == "FndRaise_FedGvtGrnt_Rcv" ~ "Federal government grants",
+    Rcv_column == "FndRaise_LocGvtCntrct_Rcv" ~ "Local government contracts",
+    Rcv_column == "FndRaise_StateGvtCntrct_Rcv" ~ "State government contracts",
+    Rcv_column == "FndRaise_FedGvtCntrct_Rcv" ~ "Federal government contracts",
+    Rcv_column == "FndRaise_PFGrnt_Rcv" ~ "Private foundation grants",
+    Rcv_column == "FndRaise_CFGrnt_Rcv" ~ "Community foundation grants",
+    Rcv_column == "FndRaise_DAF_Rcv" ~ "Donor advised funds",
+    Rcv_column == "FndRaise_Corp_Found_Grnt_Rcv" ~ "Corporate grants",
+    Rcv_column == "FndRaise_UntdWy_Rcv" ~ "United Way grants",
+    Rcv_column == "FndRaise_CombFedCmpgn_Rcv" ~ "Combined Federal Campaign",
+    Rcv_column == "FndRaise_OthrGvngPrgrm_Rcv" ~ "Other federated giving programs",
+    TRUE ~ NA_character_
+  ))
+
+# Counting the number of organizations receiving each type of funding and calculating percentage
+Rcv_counts <- dataRcv_long2 %>%
+  count(Rcv_value, name = "count") %>%
+  mutate(percentage = count / sum(count) * 100)
+
+# Visualize the funding counts
+ggplot(Rcv_counts, aes(x = Rcv_value, y = percentage, fill = Rcv_value)) +
+  geom_bar(stat = "identity", color = "white") +
+  theme_minimal() +
+  labs(title = "Where Nonprofits Received Funding From", fill = "Funding Source")
+
+# Filtering for categories with more than 1% of the total
+Rcv_counts_filtered <- Rcv_counts %>%
+  filter(percentage > 1)
+
+# Create a pie chart visualization with labels
+ggplot(Rcv_counts_filtered, aes(x = "", y = percentage, fill = Rcv_value)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  theme_void() +
+  labs(title = "Where Nonprofits Received Funding From", fill = "Funding Source") +
+  geom_label_repel(aes(label = paste0(round(percentage, 1), "%")),
+                   size = 4.5, 
+                   nudge_x = 1, 
+                   max.overlaps = 30, 
+                   show.legend = FALSE) +
+  scale_fill_brewer(palette = "Paired")
+
+
+```
+
+## Where nonprofits recieved funding from- old pie chart (working)
+
+
+
+```{r nonprofit funding pc }
+
+
+dataRcv <- read_csv("YEAR-04-DATA-PUF.csv")
+
+
+dataRcv <- dataRcv |>
+  select(ntee1,
+         FndRaise_LocGvtGrnt_Rcv,
+         FndRaise_StateGvtGrnt_Rcv,
+         FndRaise_FedGvtGrnt_Rcv,
+         FndRaise_LocGvtCntrct_Rcv,
+         FndRaise_StateGvtCntrct_Rcv,
+         FndRaise_FedGvtCntrct_Rcv,
+         FndRaise_PFGrnt_Rcv,
+         FndRaise_CFGrnt_Rcv,
+         FndRaise_DAF_Rcv,
+         FndRaise_Corp_Found_Grnt_Rcv,
+         FndRaise_UntdWy_Rcv,
+         FndRaise_CombFedCmpgn_Rcv,
+         FndRaise_OthrGvngPrgrm_Rcv)
+
+
+dataRcv_long <- dataRcv |>
+  pivot_longer(
+    cols = c(
+      FndRaise_LocGvtGrnt_Rcv,
+      FndRaise_StateGvtGrnt_Rcv,
+      FndRaise_FedGvtGrnt_Rcv,
+      FndRaise_LocGvtCntrct_Rcv,
+      FndRaise_StateGvtCntrct_Rcv,
+      FndRaise_FedGvtCntrct_Rcv,
+      FndRaise_PFGrnt_Rcv,
+      FndRaise_CFGrnt_Rcv,
+      FndRaise_DAF_Rcv,
+      FndRaise_Corp_Found_Grnt_Rcv,
+      FndRaise_UntdWy_Rcv,
+      FndRaise_CombFedCmpgn_Rcv,
+      FndRaise_OthrGvngPrgrm_Rcv
+    ),
+    names_to = "Rcv_column",
+    values_to = "Rcv_value"
+  )
+
+# Filter to only rows where the funding source was received (1)
+dataRcv_long1 <- dataRcv_long |>
+  filter(Rcv_value == "1")
+
+# Convert variable names to labels
+dataRcv_long2 <- dataRcv_long1 |>
+  mutate(Rcv_value = case_when(
+    Rcv_column == "FndRaise_LocGvtGrnt_Rcv" ~ "Local government grants",
+    Rcv_column == "FndRaise_StateGvtGrnt_Rcv" ~ "State government grants",
+    Rcv_column == "FndRaise_FedGvtGrnt_Rcv" ~ "Federal government grants",
+    Rcv_column == "FndRaise_LocGvtCntrct_Rcv" ~ "Local government contracts",
+    Rcv_column == "FndRaise_StateGvtCntrct_Rcv" ~ "State government contracts",
+    Rcv_column == "FndRaise_FedGvtCntrct_Rcv" ~ "Federal government contracts",
+    Rcv_column == "FndRaise_PFGrnt_Rcv" ~ "Private foundation grants",
+    Rcv_column == "FndRaise_CFGrnt_Rcv" ~ "Community foundation grants",
+    Rcv_column == "FndRaise_DAF_Rcv" ~ "Donor advised funds",
+    Rcv_column == "FndRaise_Corp_Found_Grnt_Rcv" ~ "Corporate donations",
+    Rcv_column == "FndRaise_UntdWy_Rcv" ~ "United Way funding",
+    Rcv_column == "FndRaise_CombFedCmpgn_Rcv" ~ "Combined Federal Campaign",
+    Rcv_column == "FndRaise_OthrGvngPrgrm_Rcv" ~ "Other federated giving",
+    TRUE ~ NA_character_
+  ))
+
+# Count and calculate percentages of each funding type
+Rcv_counts <- dataRcv_long2 |>
+  count(Rcv_value, name = "count") |>
+  mutate(percentage = count / sum(count) * 100)
+
+# Create a pie chart of overall funding sources
+ggplot(Rcv_counts, aes(x = "", y = percentage, fill = Rcv_value)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  theme_void() +
+  labs(title = "Where Nonprofits Received Funding From") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")),
+            position = position_stack(vjust = 0.5),
+            color = "white", size = 4)
+
+
+
+```
+
+
+
+## Recieved Funding Types by Broad Nonprofit Sector Group 
+
+```{r funding by sector}
+
+Rcv_by_sector <- dataRcv_long2 |>
+  count(ntee1, Rcv_value, name = "count") |>
+  group_by(ntee1) |>
+  mutate(percentage = count / sum(count) * 100) |>
+  ungroup()
+
+
+# Group ntee1 codes into broader sector categories
+Rcv_by_sector <- Rcv_by_sector |>
+  mutate(sector_group = case_when(
+    ntee1 == "A" ~ "I. Arts, Culture, and Humanities",
+    ntee1 == "B" ~ "II. Education",
+    ntee1 %in% c("C", "D") ~ "III. Environment and Animals",
+    ntee1 %in% c("E", "F", "G", "H") ~ "IV. Health",
+    ntee1 %in% c("I", "J", "K", "L", "M", "N", "O", "P") ~ "V. Human Services",
+    ntee1 == "Q" ~ "VI. International, Foreign Affairs",
+    ntee1 %in% c("R", "S", "T", "U", "V", "W") ~ "VII. Public, Societal Benefit",
+    ntee1 == "X" ~ "VIII. Religion Related",
+    ntee1 == "Y" ~ "IX. Mutual/Membership Benefit",
+    ntee1 == "Z" ~ "X. Unknown, Unclassified",
+    TRUE ~ "Other"
+  ))
+
+
+
+
+ggplot(Rcv_by_sector, aes(x = reorder(Rcv_value, -percentage), y = percentage, fill = Rcv_value)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ sector_group, scales = "free_y") +
+  coord_flip() +
+  labs(
+    title = "Recieved Funding Types by Broad Nonprofit Sector Group",
+    x = "Funding Source",
+    y = "Percentage"
+  ) +
+  theme_minimal(base_size = 10)
+
+
+
+
+
+
+```
+
+## Recieved Funding Types (GROUPED)  
+
+
+```{r}
+# Assuming you've already loaded and processed dataRcv_long2
+dataRcv_long2 <- dataRcv_long1 |>
+  mutate(Rcv_value_combined = case_when(
+    # Federated Giving Sources
+    Rcv_column %in% c("FndRaise_CombFedCmpgn_Rcv", "FndRaise_OthrGvngPrgrm_Rcv", "FndRaise_UntdWy_Rcv") ~ "Federated Giving Sources",
+
+    # Government Grants
+    Rcv_column %in% c("FndRaise_FedGvtGrnt_Rcv", "FndRaise_StateGvtGrnt_Rcv", "FndRaise_LocGvtGrnt_Rcv") ~ "Government Grants",
+
+    # Government Contracts
+    Rcv_column %in% c("FndRaise_FedGvtCntrct_Rcv", "FndRaise_StateGvtCntrct_Rcv", "FndRaise_LocGvtCntrct_Rcv") ~ "Government Contracts",
+
+    # Foundation and Private Donations
+    Rcv_column %in% c("FndRaise_PFGrnt_Rcv", "FndRaise_CFGrnt_Rcv", "FndRaise_Corp_Found_Grnt_Rcv", "FndRaise_DAF_Rcv") ~ "Foundation and Private Donations",
+
+    # Any other sources
+    TRUE ~ "Other Sources"
+  ))
+
+# Now you can count and calculate the percentage of each category
+Rcv_counts_combined <- dataRcv_long2 |>
+  count(Rcv_value_combined, name = "count") |>
+  mutate(percentage = count / sum(count) * 100)
+
+# Create a pie chart of the combined funding sources
+ggplot(Rcv_counts_combined, aes(x = "", y = percentage, fill = Rcv_value_combined)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  theme_void() +
+  labs(title = "Where Nonprofits Received Funding From (Grouped)") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")),
+            position = position_stack(vjust = 0.5),
+            color = "white", size = 4)
+
+
+
+```
+
+
+## Recieved Funding Types (GROUPED) by Broad Nonprofit Sector Group 
+
+```{r }
+# Load the necessary dataset
+dataRcv <- read_csv("YEAR-04-DATA-PUF.csv")
+
+# Select relevant columns for the analysis
+dataRcv <- dataRcv |>
+  select(
+    ntee1,
+    FndRaise_LocGvtGrnt_Rcv,
+    FndRaise_StateGvtGrnt_Rcv,
+    FndRaise_FedGvtGrnt_Rcv,
+    FndRaise_LocGvtCntrct_Rcv,
+    FndRaise_StateGvtCntrct_Rcv,
+    FndRaise_FedGvtCntrct_Rcv,
+    FndRaise_PFGrnt_Rcv,
+    FndRaise_CFGrnt_Rcv,
+    FndRaise_DAF_Rcv,
+    FndRaise_Corp_Found_Grnt_Rcv,
+    FndRaise_UntdWy_Rcv,
+    FndRaise_CombFedCmpgn_Rcv,
+    FndRaise_OthrGvngPrgrm_Rcv
+  )
+
+# Pivoting the data to long format
+dataRcv_long <- dataRcv |>
+  pivot_longer(
+    cols = starts_with("FndRaise"),  # Pivot only the funding-related columns
+    names_to = "Rcv_column",
+    values_to = "Rcv_value"
+  )
+
+# Filter to keep only rows where the funding source was received (Rcv_value == 1)
+dataRcv_long1 <- dataRcv_long |>
+  filter(Rcv_value == 1)
+
+# Convert funding column names into human-readable labels and group into broader categories
+dataRcv_long2 <- dataRcv_long1 |>
+  mutate(Rcv_value_combined = case_when(
+    # Federated Giving Sources
+    Rcv_column %in% c("FndRaise_CombFedCmpgn_Rcv", "FndRaise_OthrGvngPrgrm_Rcv", "FndRaise_UntdWy_Rcv") ~ "Federated Giving Sources",
+
+    # Government Grants
+    Rcv_column %in% c("FndRaise_FedGvtGrnt_Rcv", "FndRaise_StateGvtGrnt_Rcv", "FndRaise_LocGvtGrnt_Rcv") ~ "Government Grants",
+
+    # Government Contracts
+    Rcv_column %in% c("FndRaise_FedGvtCntrct_Rcv", "FndRaise_StateGvtCntrct_Rcv", "FndRaise_LocGvtCntrct_Rcv") ~ "Government Contracts",
+
+    # Foundation and Private Donations
+    Rcv_column %in% c("FndRaise_PFGrnt_Rcv", "FndRaise_CFGrnt_Rcv", "FndRaise_Corp_Found_Grnt_Rcv", "FndRaise_DAF_Rcv") ~ "Foundation and Private Donations",
+
+    # Other Sources of Funding
+    TRUE ~ "Other Sources"
+  ))
+
+# Group by sector and funding type, then calculate percentage
+Rcv_by_sector_combined <- dataRcv_long2 |>
+  group_by(ntee1, Rcv_value_combined) |>
+  summarise(count = n(), .groups = "drop") |>
+  group_by(ntee1) |>
+  mutate(percentage = (count / sum(count)) * 100) |>
+  ungroup()
+
+# Group ntee1 codes into broader sector categories
+Rcv_by_sector_combined <- Rcv_by_sector_combined |>
+  mutate(sector_group = case_when(
+    ntee1 == "A" ~ "I. Arts, Culture, and Humanities",
+    ntee1 == "B" ~ "II. Education",
+    ntee1 %in% c("C", "D") ~ "III. Environment and Animals",
+    ntee1 %in% c("E", "F", "G", "H") ~ "IV. Health",
+    ntee1 %in% c("I", "J", "K", "L", "M", "N", "O", "P") ~ "V. Human Services",
+    ntee1 == "Q" ~ "VI. International, Foreign Affairs",
+    ntee1 %in% c("R", "S", "T", "U", "V", "W") ~ "VII. Public, Societal Benefit",
+    ntee1 == "X" ~ "VIII. Religion Related",
+    ntee1 == "Y" ~ "IX. Mutual/Membership Benefit",
+    ntee1 == "Z" ~ "X. Unknown, Unclassified",
+    TRUE ~ "Other"
+  ))
+
+# Sort ntee1 values based on the new sector_group
+Rcv_by_sector_combined <- Rcv_by_sector_combined |>
+  mutate(sector_group = factor(sector_group, levels = c(
+    "I. Arts, Culture, and Humanities",
+    "II. Education",
+    "III. Environment and Animals",
+    "IV. Health",
+    "V. Human Services",
+    "VI. International, Foreign Affairs",
+    "VII. Public, Societal Benefit",
+    "VIII. Religion Related",
+    "IX. Mutual/Membership Benefit",
+    "X. Unknown, Unclassified",
+    "Other"
+  )))
+
+# Create a bar plot (faceted) for funding sources by sector group
+ggplot(Rcv_by_sector_combined, aes(x = reorder(Rcv_value_combined, -percentage), y = percentage, fill = Rcv_value_combined)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ sector_group, scales = "free_y") +  # Facet by sector group
+  coord_flip() +  # Flip the bars to horizontal
+  labs(
+    title = "Received Funding Types by Broad Nonprofit Sector Group",
+    x = "Funding Source",
+    y = "Percentage"
+  ) +
+  theme_minimal(base_size = 10)
+
+
+
+
+
+
+```
+
+
+#### STATS
+
+
+## Anova- whether the CEO race impacts funding: 
+
+p-value = 0.172: Since this is greater than 0.05, it means there is no significant difference in the funding (TotRev_clean) based on the CEO race (ceo_race_label).
+
+So, no- the race of the CEO does not have an impact statistically on funding. 
+
+```{r ceo race and funding}
+
+
+
+data04 <- read_csv("YEAR-04-DATA-PUF.csv")
+
+
+race_labels <- c(
+  "1" = "Asian or Pacific Islander",
+  "2" = "Black or African American",
+  "3" = "Hispanic or Latino",
+  "4" = "Native American",
+  "5" = "White",
+  "6" = "Multiracial",
+  "7" = "Other"
+)
+
+data04 <- data04 |>
+  filter(!is.na(CEOrace)) |>  
+  mutate(ceo_race_label = recode(as.character(CEOrace), !!!race_labels)) 
+
+
+
+#ANOVA- the impact of 'CEOrace' on 'TotRev_clean'
+anova_result <- aov(TotRev_clean ~ ceo_race_label, data = data04)
+
+
+summary(anova_result)
+
+```
+
+
+## Anova- Significant differences in funding based on geographic focus.
+
+
+The geographic focus (geo_focus) has a strong impact on the amount of funding a nonprofit receives, and this relationship is highly statistically significant.
+
+
+Based on the ANOVA results, you can conclude that the amount of funding a nonprofit receives does depend on the geographic area where it provides services. Specifically:
+
+The p-value (3.95e-10) is extremely small, indicating that the differences in funding (TotRev_clean) between the different geo_focus categories (such as local, national, international, etc.) are highly statistically significant.
+
+The F-value (9.3) suggests that the differences in funding between the groups (geographic areas) are large relative to the variation within each group. This means that the geographic area a nonprofit serves plays an important role in determining how much funding it receives.
+
+
+```{r geo areas}
+
+
+# getting geo Areas into one column
+data_cleaned <- data04 |>
+  mutate(geo_focus = case_when(
+    GeoAreas_Local == 1 ~ "Local",
+    GeoAreas_MultipleLocal == 1 ~ "Multiple Local",
+    GeoAreas_RegionalWithin == 1 ~ "Regional Within State",
+    GeoAreas_RegionalAcross == 1 ~ "Regional Across States",
+    GeoAreas_National == 1 ~ "National",
+    GeoAreas_International == 1 ~ "International",
+    TRUE ~ "Other"  
+  ))
+
+
+
+
+# ANOVA 
+anova_result_geo_focus <- aov(TotRev_clean ~ geo_focus, data = data_cleaned)
+
+# Display the ANOVA result
+summary(anova_result_geo_focus)
+
+# Prepare the data for visualization 
+funding_by_geo_focus_sorted <- data.frame(
+  geo_focus = c("Regional Within State", "National", "Multiple Local", "Other", 
+                "Regional Across States", "Local", "International"),
+  mean_funding = c(1740585.5, 1650063.6, 1439560.8, 1407966.7, 1298158.2, 
+                   1088753.1, 873768.2),
+  median_funding = c(755857.9, 778931.2, 512280.3, 550776.6, 559973.1, 
+                     414651.9, 302402.4)
+)
+
+# Create the bar plot for mean funding and overlay with median funding as points
+ggplot(funding_by_geo_focus_sorted, aes(x = geo_focus, y = mean_funding, fill = geo_focus)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +  # Bar chart for mean funding
+  geom_point(aes(y = median_funding), color = "black", size = 3) +  # Points for median funding
+  labs(title = "Comparison of Mean and Median Funding by Geographic Focus",
+       x = "Geographic Focus",
+       y = "Funding ($)",
+       subtitle = "Bar: Mean Funding, Points: Median Funding") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+        plot.title = element_text(hjust = 0.5))  # Center the title
+
+
+```
+
+
+
+## which geographic area (local, national, international, etc.) gets the most funding based on the mean of "TotRev_clean"
+
+
+Regional and National Focus: Nonprofits that focus on regional (within state) and national areas tend to receive the highest average funding, likely due to their broader outreach, access to larger donor bases, or ability to attract government funding.
+
+Local and International Focus: Local nonprofits tend to receive lower average funding compared to regional or national ones. Similarly, international nonprofits receive the lowest average funding, which may indicate more challenges in raising large sums or fewer funding sources.
+```{r mean funding and geo focus}
+
+
+funding_by_geo_focus <- data_cleaned |>
+  group_by(geo_focus) |>
+  summarise(mean_funding = mean(TotRev_clean, na.rm = TRUE),  
+            median_funding = median(TotRev_clean, na.rm = TRUE)) 
+
+
+funding_by_geo_focus_sorted <- funding_by_geo_focus |>
+  arrange(desc(mean_funding))  # Sort in descending order
+
+# View the sorted result
+funding_by_geo_focus_sorted
+
+
+```
+
+
+
+## relationship between program focus variables and total revenue. 
+
+
+ProgDem_Children shows no significant difference in funding.
+
+ProgDem_Veterans shows a marginally significant difference in funding.
+
+ProgDem_Families and ProgDem_Adults show statistically significant differences in funding, meaning nonprofits with a primary focus on families or adults receive significantly different funding compared to those without a focus on these groups.
+
+```{r prog dem}
+
+# Load necessary libraries
+library(dplyr)
+
+# Define a list of all ProgDem_* variables
+prog_dem_vars <- c("ProgDem_Children", "ProgDem_YoungAdults", "ProgDem_Adults", 
+                   "ProgDem_Elders", "ProgDem_Veterans", "ProgDem_Families", 
+                   "ProgDem_BelowFPL")
+
+# Iterate over each ProgDem_* variable and run ANOVA
+for (var in prog_dem_vars) {
+  anova_result <- aov(TotRev_clean ~ get(var), data = data04)
+  cat("\nANOVA results for", var, ":\n")
+  print(summary(anova_result))
+}
+
+
+
+```
+
+
+
+# Average revenue for each "focused program". Tukey's test to understand difference between primary and secondary focus. 
+
+The results show that nonprofits with a primary focus on a specific program receive significantly more funding than those with no focus on the program. However, the difference in funding between secondary focus and the other two groups (primary and no focus) is not significant.
+
+
+Primary Focus vs No Focus: There is a significant difference in funding. Nonprofits with a primary focus on the program (e.g., Veterans, Children) receive significantly more funding than those with no focus on the program.
+
+Secondary Focus vs No Focus: The difference in funding is not statistically significant, meaning that nonprofits with a secondary focus on the program do not differ significantly in funding from those with no focus.
+
+Secondary Focus vs Primary Focus: There is no significant difference in funding between nonprofits with a secondary focus and those with a primary focus.
+
+```{r dem plot}
+
+
+
+selected_columns <- c("TotRev_clean", "ProgDem_Children", "ProgDem_Veterans", "ProgDem_Families", "ProgDem_Adults")
+
+
+data04_cleaned <- data04 |>
+  mutate(
+    ProgDem_Children = recode(ProgDem_Children, `0` = "No Focus", `1` = "Primary Focus", `2` = "Secondary Focus", `98` = NA_character_),
+    ProgDem_Veterans = recode(ProgDem_Veterans, `0` = "No Focus", `1` = "Primary Focus", `2` = "Secondary Focus", `98` = NA_character_),
+    ProgDem_Families = recode(ProgDem_Families, `0` = "No Focus", `1` = "Primary Focus", `2` = "Secondary Focus", `98` = NA_character_),
+    ProgDem_Adults = recode(ProgDem_Adults, `0` = "No Focus", `1` = "Primary Focus", `2` = "Secondary Focus", `98` = NA_character_)
+  )
+
+
+data_long <- data04_cleaned |>
+  select(all_of(selected_columns)) |>
+  gather(key = "ProgramFocus", value = "Focus", -TotRev_clean) |>
+  filter(!is.na(Focus)) |>
+  filter(!is.na(TotRev_clean))# Remove rows with NA in Focus
+
+
+str(data04$TotRev_clean)  
+class(data04$TotRev_clean) 
+
+
+veterans_avg_revenue <- data04_cleaned |>
+  filter(ProgDem_Veterans == "Primary Focus") |>
+  summarise(AverageRevenue = mean(TotRev_clean, na.rm = TRUE))
+
+
+children_avg_revenue <- data04_cleaned |>
+  filter(ProgDem_Children == "Primary Focus") |>
+  summarise(AverageRevenue = mean(TotRev_clean, na.rm = TRUE))
+
+
+families_avg_revenue <- data04_cleaned |>
+  filter(ProgDem_Families == "Primary Focus") |>
+  summarise(AverageRevenue = mean(TotRev_clean, na.rm = TRUE))
+
+
+adults_avg_revenue <- data04_cleaned |>
+  filter(ProgDem_Adults == "Primary Focus") |>
+  summarise(AverageRevenue = mean(TotRev_clean, na.rm = TRUE))
+
+
+print(veterans_avg_revenue)
+print(children_avg_revenue)
+print(families_avg_revenue)
+print(adults_avg_revenue)
+
+
+
+
+
+avg_revenue_df <- data.frame(
+  ProgramFocus = c("Veterans", "Children", "Families", "Adults"),
+  AverageRevenue = c(
+    veterans_avg_revenue$AverageRevenue,
+    children_avg_revenue$AverageRevenue,
+    families_avg_revenue$AverageRevenue,
+    adults_avg_revenue$AverageRevenue
+  )
+)
+
+
+ggplot(avg_revenue_df, aes(x = ProgramFocus, y = AverageRevenue, fill = ProgramFocus)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  labs(title = "Average Total Revenue by Program Focus (Primary Focus)",
+       x = "Program Focus", y = "Average Total Revenue ($)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+
+
+
+
+
+prog_dem_vars <- c("ProgDem_Children", "ProgDem_Veterans", "ProgDem_Families", "ProgDem_Adults")
+
+
+for (var in prog_dem_vars) {
+  anova_result <- aov(TotRev_clean ~ get(var), data = data04_cleaned)
+  cat("\nANOVA results for", var, ":\n")
+  print(summary(anova_result))
+}
+
+
+
+tukey_result <- TukeyHSD(anova_result)
+print(tukey_result)
+
+
+
+``` 
+
+
+## Average funding based on sector
+
+This chart indicates that nonprofits focusing on health, public benefit, and human services tend to have higher funding, while sectors such as religion-related nonprofits may receive less funding on average. 
+
+```{r sector}
+
+
+data04_cleaned <- data04 |>
+  mutate(across(contains("FndRaise_"), ~na_if(., 97), .names = "cleaned_{col}")) |>
+  mutate(across(contains("FndRaise_"), ~na_if(., 98), .names = "cleaned_{col}")) |>
+  mutate(across(contains("FndRaise_"), as.factor, .names = "factor_{col}"))
+
+
+data04_cleaned$sector_group <- recode(data04_cleaned$ntee1,
+                                      A = "I.", B = "II.", C = "III.", D = "III.",
+                                      E = "IV.", F = "IV.", G = "IV.", H = "IV.",
+                                      I = "V.", J = "V.", K = "V.", L = "V.",
+                                      M = "V.", N = "V.", O = "V.", P = "V.",
+                                      Q = "VI.", R = "VII.", S = "VII.", T = "VII.",
+                                      U = "VII.", V = "VII.", W = "VII.",
+                                      X = "VIII.", Y = "IX.", Z = "X.")
+
+
+data04_cleaned$sector_group <- ifelse(is.na(data04_cleaned$sector_group), "Unknown", data04_cleaned$sector_group)
+
+
+data04_cleaned$factor_FndRaise_TotExp <- factor(data04_cleaned$FndRaise_TotExp, 
+                                                 levels = c(1, 2, 3, 4, 5), 
+                                                 labels = c("Significantly Decrease", "Moderately Decrease", "Same", 
+                                                            "Moderately Increase", "Significantly Increase"))
+
+
+sector_labels <- c(
+  "I." = "Arts, Culture, and Humanities",
+  "II." = "Education",
+  "III." = "Environment and Animals",
+  "IV." = "Health",
+  "V." = "Human Services",
+  "VI." = "International, Foreign Affairs",
+  "VII." = "Public, Societal Benefit",
+  "VIII." = "Religion Related",
+  "IX." = "Mutual/Membership Benefit",
+  "X." = "Unknown, Unclassified"
+)
+
+
+
+
+sector_funding <- data04_cleaned |>
+  group_by(sector_group) |>
+  summarise(mean_funding = mean(TotRev_clean, na.rm = TRUE))  # Calculate mean funding for each sector
+
+
+sector_funding_sorted <- sector_funding |>
+  arrange(desc(mean_funding))
+
+
+ggplot(sector_funding_sorted, aes(x = reorder(sector_group, mean_funding), y = mean_funding, fill = sector_group)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Mean Funding by Sector", x = "Sector", y = "Mean Funding ($)") +
+  scale_x_discrete(labels = sector_labels) +  # Use the full sector labels
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+        plot.title = element_text(hjust = 0.5))  # Center the title
+
+```
+
+## ANOVA to see if funding is significantly different by sector
+
+Since the p-value is less than 0.05 we can conclude that the sector a nonprofit belongs to does significantly affect the amount of funding they receive. 
+
+
+```{r anova sector}
+
+
+
+
+
+class(data04_cleaned$sector_group)
+
+
+anova_result1 <- aov(TotRev_clean ~ sector_group, data = data04_cleaned)
+
+
+summary(anova_result1)
+
+
+
+```
+## Is weighted data significantly different? 
+
+
+Chi squared test: 
+
+The X-squared value is 3196, and the p-value is 0.275, which is greater than 0.05, meaning that the difference between weighted and unweighted distributions is not statistically significant. This suggests that, for this specific dataset, there is no strong evidence that the weights significantly affect the distributions of nonprofits across regions and sectors.
+
+
+```{r}
+
+
+
+nonprofit_with_region <- data04 |>
+  group_by(CensusRegion9, ntmaj12) |>
+  summarise(weighted_count = sum(year4wt, na.rm = TRUE), .groups = "drop") |>
+  group_by(CensusRegion9) |>
+  mutate(percent = 100 * weighted_count / sum(weighted_count)) |>
+  ungroup()
+
+
+nonprofit_unweighted <- data04 |>
+  group_by(CensusRegion9, ntmaj12) |>
+  summarise(unweighted_count = n(), .groups = "drop")
+
+# Combine weighted and unweighted counts into one dataframe
+nonprofit_comparison <- nonprofit_with_region |>
+  left_join(nonprofit_unweighted, by = c("CensusRegion9", "ntmaj12"))
+
+# Plot comparison of weighted and unweighted counts by region and sector
+ggplot(nonprofit_comparison, aes(x = CensusRegion9, y = weighted_count, fill = ntmaj12)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_bar(aes(y = unweighted_count), stat = "identity", position = "dodge", alpha = 0.5) +
+  labs(title = "Comparison of Weighted and Unweighted Nonprofits by Region and Sector",
+       y = "Count",
+       x = "Census Region")
+
+
+# Run ANOVA to see if there’s a significant difference between weighted counts by region and sector
+anova_weighted_vs_unweighted <- aov(weighted_count ~ CensusRegion9 + ntmaj12, data = nonprofit_comparison)
+summary(anova_weighted_vs_unweighted)
+
+
+# Chi-squared test to compare weighted vs unweighted distributions
+chisq_test <- chisq.test(nonprofit_comparison$weighted_count, nonprofit_comparison$unweighted_count)
+chisq_test
+
+
+
+```
