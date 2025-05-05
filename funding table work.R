@@ -31,6 +31,10 @@ sector_labels <- c(
   "X." = "Unknown, Unclassified"
 )
 
+local_props <- local_nonseek_receive %>%
+  count(sector_group) %>%
+  mutate(proportion = n / sum(n))
+
 local_rec_noseek <- ggplot(local_nonseek_receive, aes(x = sector_group)) +
   geom_bar(fill = "#2c7fb8") +
   scale_x_discrete(labels = sector_labels) +
@@ -41,6 +45,7 @@ local_rec_noseek <- ggplot(local_nonseek_receive, aes(x = sector_group)) +
   ) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 
 #### STATE FUNDING
 state_nonseek_receive <- data24 |>
@@ -192,8 +197,15 @@ fed_region_counts <- data24 %>%
 region_counts_all <- bind_rows(local_region_counts, state_region_counts, fed_region_counts)
 
 ### STATE MAP
+custom_regions <- custom_regions %>%
+  mutate(region = as.numeric(region))
+
+state_region_counts_weighted <- data2024 |>
+  group_by(census_region9) |>
+  summarise(n = sum(year4wt, na.rm = TRUE))
+
 state_map_data <- custom_regions %>%
-  left_join(state_region_counts, by = c("region" = "CensusRegion9")) %>%
+  left_join(state_region_counts_weighted, by = c("region" = "census_region9")) %>%
   mutate(n = replace_na(n, 0))
 
 state_noseek_plot <- plot_ly(
@@ -241,6 +253,204 @@ fed_noseek_plot <- plot_ly(
       lakecolor = toRGB('white')
     )
   )
+### These all have weights factored in 
+###### PROPORTION MAPS 
+# Local 
+total_local_region_counts <- data24 %>%
+  group_by(CensusRegion9) %>%
+  summarise(total_n = sum(year4wt, na.rm = TRUE))
+
+local_region_counts_pro <- data24 %>%
+  filter(FndRaise_LocGvtGrnt_Seek == 0, FndRaise_LocGvtGrnt_Rcv == 1) %>%
+  group_by(CensusRegion9) %>%
+  summarise(received_n = sum(year4wt, na.rm = TRUE))
+
+local_region_props <- left_join(local_region_counts_pro, total_local_region_counts, by = "CensusRegion9") %>%
+  mutate(proportion = received_n / total_n)
+
+local_map_data <- custom_regions %>%
+  mutate(region = as.numeric(region)) %>%
+  left_join(local_region_props, by = c("region" = "CensusRegion9")) %>%
+  mutate(proportion = replace_na(proportion, 0))
+
+# PLOT
+local_noseek_plot_pro <- plot_ly(
+  data = local_map_data,
+  type = 'choropleth',
+  locations = ~state,
+  locationmode = 'USA-states',
+  z = ~proportion,
+  text = ~paste(state, "<br>Proportion:", scales::percent(proportion)),
+  colorscale = 'RdPu',
+  colorbar = list(title = "Proportion"),
+  marker = list(line = list(color = 'white', width = 1))
+) %>%
+  layout(
+    title = "Proportion of Nonprofits Receiving Local \nGov Grants Without Seeking",
+    geo = list(
+      scope = 'usa',
+      projection = list(type = 'albers usa'),
+      showlakes = TRUE,
+      lakecolor = toRGB('white')
+    )
+  )
+
+#### State 
+total_state_region_counts <- data24 %>%
+  group_by(CensusRegion9) %>%
+  summarise(total_n = sum(year4wt, na.rm = TRUE))
+
+state_region_counts_pro <- data24 %>%
+  filter(FndRaise_StateGvtGrnt_Seek == 0, FndRaise_StateGvtGrnt_Rcv == 1) %>%
+  group_by(CensusRegion9) %>%
+  summarise(received_n = sum(year4wt, na.rm = TRUE))
+
+state_region_props <- left_join(state_region_counts_pro, total_state_region_counts, by = "CensusRegion9") %>%
+  mutate(proportion = received_n / total_n)
+
+state_map_data <- custom_regions %>%
+  mutate(region = as.numeric(region)) %>%
+  left_join(state_region_props, by = c("region" = "CensusRegion9")) %>%
+  mutate(proportion = replace_na(proportion, 0))
+
+# PLOT
+state_noseek_plot_pro <- plot_ly(
+  data = state_map_data,
+  type = 'choropleth',
+  locations = ~state,
+  locationmode = 'USA-states',
+  z = ~proportion,
+  text = ~paste(state, "<br>Proportion:", scales::percent(proportion)),
+  colorscale = 'RdPu',
+  colorbar = list(title = "Proportion"),
+  marker = list(line = list(color = 'white', width = 1))
+) %>%
+  layout(
+    title = "Proportion of Nonprofits Receiving State \nGov Grants Without Seeking",
+    geo = list(
+      scope = 'usa',
+      projection = list(type = 'albers usa'),
+      showlakes = TRUE,
+      lakecolor = toRGB('white')
+    )
+  )
+#### Federal
+total_fed_region_counts <- data24 %>%
+  group_by(CensusRegion9) %>%
+  summarise(total_n = sum(year4wt, na.rm = TRUE))
+
+fed_region_counts_pro <- data24 %>%
+  filter(FndRaise_FedGvtGrnt_Seek == 0, FndRaise_FedGvtGrnt_Rcv == 1) %>%
+  group_by(CensusRegion9) %>%
+  summarise(received_n = sum(year4wt, na.rm = TRUE))
+
+fed_region_props <- left_join(fed_region_counts_pro, total_fed_region_counts, by = "CensusRegion9") %>%
+  mutate(proportion = received_n / total_n)
+
+fed_map_data <- custom_regions %>%
+  mutate(region = as.numeric(region)) %>%
+  left_join(fed_region_props, by = c("region" = "CensusRegion9")) %>%
+  mutate(proportion = replace_na(proportion, 0))
+# PLOT
+fed_noseek_plot_pro <- plot_ly(
+  data = fed_map_data,
+  type = 'choropleth',
+  locations = ~state,
+  locationmode = 'USA-states',
+  z = ~proportion,
+  text = ~paste(state, "<br>Proportion:", scales::percent(proportion)),
+  colorscale = 'RdPu',
+  colorbar = list(title = "Proportion"),
+  marker = list(line = list(color = 'white', width = 1))
+) %>%
+  layout(
+    title = "Proportion of Nonprofits Receiving Federal \nGov Grants Without Seeking",
+    geo = list(
+      scope = 'usa',
+      projection = list(type = 'albers usa'),
+      showlakes = TRUE,
+      lakecolor = toRGB('white')
+    )
+  )
+##
+#### PROPORTION BAR GRAPHS
+local_props <- local_nonseek_receive %>%
+  group_by(sector_group) %>%
+  summarise(weighted_n = sum(year4wt, na.rm = TRUE)) |>
+  mutate(proportion = weighted_n / sum(weighted_n))
+
+local_rec_noseek <- ggplot(local_props, aes(x = sector_group, y = proportion)) +
+  geom_col(fill = "#2c7fb8") +
+  scale_x_discrete(labels = sector_labels) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Proportion of Nonprofits Receiving Local Gov Grants Without Seeking",
+    x = "Sector",
+    y = "Proportion"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+state_props <- state_nonseek_receive %>%
+  group_by(sector_group) %>%
+  summarise(weighted_n = sum(year4wt, na.rm = TRUE)) |>
+  mutate(proportion = weighted_n / sum(weighted_n))
+
+state_rec_noseek <- ggplot(state_props, aes(x = sector_group, y = proportion)) +
+  geom_col(fill = "#2c7fb8") +
+  scale_x_discrete(labels = sector_labels) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Proportion of Nonprofits Receiving State Gov Grants Without Seeking",
+    x = "Sector",
+    y = "Proportion"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+fed_props <- fed_nonseek_receive %>%
+  group_by(sector_group) %>%
+  summarise(weighted_n = sum(year4wt, na.rm = TRUE)) |>
+  mutate(proportion = weighted_n / sum(weighted_n))
+
+fed_rec_noseek <- ggplot(fed_props, aes(x = sector_group, y = proportion)) +
+  geom_col(fill = "#2c7fb8") +
+  scale_x_discrete(labels = sector_labels) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Proportion of Nonprofits Receiving Federal Gov Grants Without Seeking",
+    x = "Sector",
+    y = "Proportion"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+combined_props <- combined_nonseek_receive %>%
+  group_by(level, sector_group) %>%
+  summarise(weighted_n = sum(year4wt, na.rm = TRUE), .groups = 'drop') %>%
+  group_by(level) %>%
+  mutate(proportion = weighted_n / sum(weighted_n))
+
+noseek_combined <- ggplot(combined_props, aes(x = sector_group, y = proportion, fill = level)) +
+  geom_col(position = "dodge") +
+  scale_x_discrete(labels = sector_labels) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Proportion of Nonprofits Receiving\n Gov Grants Without Seeking",
+    x = "Sector",
+    y = "Proportion",
+    fill = "Gov Level"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+
+
+
+
 
 
 
