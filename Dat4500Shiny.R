@@ -23,34 +23,48 @@ YEAR_04_DATA_PUF <- YEAR_04_DATA_PUF |>
                              "3" = "$500,000-$999,999",
                              "4" = "$1 million-$9,999,999",
                              "5" = "$10 million and above")))
-
+ 
 #Local Grant Stats
 local_grant_plot <- function(data) {
   Loc_Grnt_design <- svydesign(
-    ids = ~1,
-    data = data,
-    weights = ~year4wt
+    ids = ~1, #0 means clusters and 1 means no clusters
+    data = data, #if this wasn't in a function, it would be data = year_04_data
+    weights = ~year4wt #put in our weights variable
   )
-  Loc_Grnt_design_seek <- subset(Loc_Grnt_design, FndRaise_LocGvtGrnt_Seek == 1)
-  contingency_table <- svytable(~FndRaise_LocGvtGrnt_Rcv + SizeStrata, Loc_Grnt_design_seek)
-  chisq_result <- svychisq(~FndRaise_LocGvtGrnt_Rcv + SizeStrata, Loc_Grnt_design_seek)
-#Local Grant Graph with error bar
-  LocGvtGrntproptable <- svyby(
-    ~FndRaise_LocGvtGrnt_Rcv,
-    ~SizeStrata,
-    Loc_Grnt_design_seek,
-    svymean,
-    na.rm = TRUE
+  Loc_Grnt_design_seek <- subset( #filter for the NGOs who actually sought it
+    Loc_Grnt_design, FndRaise_LocGvtGrnt_Seek == 1)
+  
+  LocGvtGrntproptable <- svyby( #1st two arguments in svyby are like group_by and summarize
+    ~FndRaise_LocGvtGrnt_Rcv, #this is what we are summarizing, did they rcv a grant?
+    ~SizeStrata, #what we are grouping by 
+    Loc_Grnt_design_seek, #the filtered object we just made
+    svymean, #calculate the mean which is the proportion
+    na.rm = TRUE #ignore NAs
   )
+
+  #gets the total number of NGO's in each group. made into data frame so we can left_join 
+  LocGvtGrntWidth <- as.data.frame(svytotal(~SizeStrata, Loc_Grnt_design_seek))
+  #svytotal made weird row names. use rownames() to get them to the column
+  #Use gsub to drop the extra stuff off the name in the new column
+  LocGvtGrntWidth$SizeStrata <- gsub("SizeStrata", "", rownames(LocGvtGrntWidth))
+  names(LocGvtGrntWidth)[1] <- "SampleSize" #change the frist column in the data to SampleSize
   
-  LocGvtGrntproptable <- LocGvtGrntproptable |>
-    mutate(
-      CI_Low = FndRaise_LocGvtGrnt_Rcv - 1.96 * se,
-      CI_High = FndRaise_LocGvtGrnt_Rcv + 1.96 * se)
+  LocGvtGrntproptable <- left_join(LocGvtGrntproptable, LocGvtGrntWidth, by = "SizeStrata") |>
+   mutate (
+     bar_width = (SampleSize / max(SampleSize)), #give a relative size for each bar
+     CI_Low = FndRaise_LocGvtGrnt_Rcv - 1.96 * se, #formula to calculate CI
+     CI_High = FndRaise_LocGvtGrnt_Rcv + 1.96 *se,
+     SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), #keep the bars in order
+     x_center = as.numeric(SizeStrata), #get the CI's to be in the middle of the bars
+     xmin = x_center - bar_width / 2, #make the bar symmetrical on both sides
+     xmax = x_center + bar_width / 2
+   )
   
-  plot <- ggplot(LocGvtGrntproptable, aes(x = SizeStrata, y = FndRaise_LocGvtGrnt_Rcv)) +
-    geom_col(fill = "#05bfff") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  plot <- ggplot(LocGvtGrntproptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_LocGvtGrnt_Rcv), fill = "#05bfff") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = LocGvtGrntproptable$x_center, 
+                       labels = LocGvtGrntproptable$SizeStrata) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Local Gov Grant",
          subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -63,7 +77,8 @@ local_grant_plot <- function(data) {
           plot.subtitle = element_text(size = 17))
   
 return(plot)
-  }
+}
+
 #This is how we print the stats on the shiny app
 local_grants_stats <- function(data) {
   Loc_Grnt_design <- svydesign(
@@ -80,13 +95,15 @@ local_grants_stats <- function(data) {
 State_grant_plot <- function(data) {
 State_Grnt_design <- svydesign(
   ids = ~1,
-  data = YEAR_04_DATA_PUF,
+  data = data,
   weights = ~year4wt
 )
 
 State_Grnt_design_seek <- subset(State_Grnt_design, FndRaise_StateGvtGrnt_Seek == 1)
 contingency_table <- svytable(~FndRaise_StateGvtGrnt_Rcv + SizeStrata, State_Grnt_design_seek)
 chisq_result <- svychisq(~FndRaise_StateGvtGrnt_Rcv + SizeStrata, State_Grnt_design_seek)
+
+
 #Graph with error bar
 StateGvtGrntproptable <- svyby(
   ~FndRaise_StateGvtGrnt_Rcv,
@@ -96,14 +113,26 @@ StateGvtGrntproptable <- svyby(
   na.rm = TRUE
 )
 
-StateGvtGrntproptable <- StateGvtGrntproptable |>
-  mutate(
-    CI_Low = FndRaise_StateGvtGrnt_Rcv - 1.96 * se,
-    CI_High = FndRaise_StateGvtGrnt_Rcv + 1.96 * se)
+StateGvtGrntWidth <- as.data.frame(svytotal(~SizeStrata, State_Grnt_design_seek))
+StateGvtGrntWidth$SizeStrata <- gsub("SizeStrata", "", rownames(StateGvtGrntWidth))
+names(StateGvtGrntWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(StateGvtGrntproptable, aes(x = SizeStrata, y = FndRaise_StateGvtGrnt_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+StateGvtGrntproptable <- left_join(StateGvtGrntproptable, StateGvtGrntWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_StateGvtGrnt_Rcv - 1.96 * se,
+    CI_High = FndRaise_StateGvtGrnt_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+    )
+
+plot <- ggplot(StateGvtGrntproptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_StateGvtGrnt_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = StateGvtGrntproptable$x_center, 
+                     labels = StateGvtGrntproptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received State Gov Grant",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -121,7 +150,7 @@ return(plot)
 State_grants_stats <- function(data) {
   State_Grnt_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -149,14 +178,26 @@ FedGvtGrntproptable <- svyby(
   na.rm = TRUE
 )
 
-FedGvtGrntproptable <- FedGvtGrntproptable |>
-  mutate(
-    CI_Low = FndRaise_FedGvtGrnt_Rcv - 1.96 * se,
-    CI_High = FndRaise_FedGvtGrnt_Rcv + 1.96 * se)
+FedGvtGrntWidth <- as.data.frame(svytotal(~SizeStrata, Fed_Grnt_design_seek))
+FedGvtGrntWidth$SizeStrata <- gsub("SizeStrata", "", rownames(FedGvtGrntWidth))
+names(FedGvtGrntWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(FedGvtGrntproptable, aes(x = SizeStrata, y = FndRaise_FedGvtGrnt_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+FedGvtGrntproptable <- left_join(FedGvtGrntproptable, FedGvtGrntWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_FedGvtGrnt_Rcv - 1.96 * se,
+    CI_High = FndRaise_FedGvtGrnt_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+  )
+
+plot <- ggplot(FedGvtGrntproptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_FedGvtGrnt_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = FedGvtGrntproptable$x_center, 
+                     labels = FedGvtGrntproptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received Fed Gov Grant",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -173,7 +214,7 @@ return(plot)
 Fed_grant_stats <- function(data) {
   Fed_Grnt_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   Fed_Grnt_design_seek <- subset(Fed_Grnt_design, FndRaise_FedGvtGrnt_Seek == 1)
@@ -200,14 +241,26 @@ LocGvtCntrctproptable <- svyby(
   na.rm = TRUE
 )
 
-LocGvtCntrctproptable <- LocGvtCntrctproptable |>
-  mutate(
-    CI_Low = FndRaise_LocGvtCntrct_Rcv - 1.96 * se,
-    CI_High = FndRaise_LocGvtCntrct_Rcv + 1.96 * se)
+LocGvtCntrctWidth <- as.data.frame(svytotal(~SizeStrata, Loc_Cntrct_design_seek))
+LocGvtCntrctWidth$SizeStrata <- gsub("SizeStrata", "", rownames(LocGvtCntrctWidth))
+names(LocGvtCntrctWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(LocGvtCntrctproptable, aes(x = SizeStrata, y = FndRaise_LocGvtCntrct_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+LocGvtCntrctproptable <- left_join(LocGvtCntrctproptable, LocGvtCntrctWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_LocGvtCntrct_Rcv - 1.96 * se,
+    CI_High = FndRaise_LocGvtCntrct_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+  )
+
+plot <- ggplot(LocGvtCntrctproptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_LocGvtCntrct_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = LocGvtCntrctproptable$x_center, 
+                     labels = LocGvtCntrctproptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received Local Gov Contract",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -225,7 +278,7 @@ return(plot)
 Local_contract_stats <- function(data) {
   Loc_Cntrct_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -253,14 +306,26 @@ StateGvtCntrctproptable <- svyby(
   na.rm = TRUE
 )
 
-StateGvtCntrctproptable <- StateGvtCntrctproptable |>
-  mutate(
-    CI_Low = FndRaise_StateGvtCntrct_Rcv - 1.96 * se,
-    CI_High = FndRaise_StateGvtCntrct_Rcv + 1.96 * se)
+StateGvtCntrctWidth <- as.data.frame(svytotal(~SizeStrata, State_Cntrct_design_seek))
+StateGvtCntrctWidth$SizeStrata <- gsub("SizeStrata", "", rownames(StateGvtCntrctWidth))
+names(StateGvtCntrctWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(StateGvtCntrctproptable, aes(x = SizeStrata, y = FndRaise_StateGvtCntrct_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+StateGvtCntrctproptable <- left_join(StateGvtCntrctproptable, StateGvtCntrctWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_StateGvtCntrct_Rcv - 1.96 * se,
+    CI_High = FndRaise_StateGvtCntrct_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+  )
+
+plot <- ggplot(StateGvtCntrctproptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_StateGvtCntrct_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = StateGvtCntrctproptable$x_center, 
+                     labels = StateGvtCntrctproptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received State Gov Contract",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -277,7 +342,7 @@ return(plot)
 State_contract_stats <- function(data) {
   State_Cntrct_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -305,14 +370,26 @@ FedGvtCntrctproptable <- svyby(
   na.rm = TRUE
 )
 
-FedGvtCntrctproptable <- FedGvtCntrctproptable |>
-  mutate(
-    CI_Low = FndRaise_FedGvtCntrct_Rcv - 1.96 * se,
-    CI_High = FndRaise_FedGvtCntrct_Rcv + 1.96 * se)
+FedGvtCntrctWidth <- as.data.frame(svytotal(~SizeStrata, Fed_Cntrct_design_seek))
+FedGvtCntrctWidth$SizeStrata <- gsub("SizeStrata", "", rownames(FedGvtCntrctWidth))
+names(FedGvtCntrctWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(FedGvtCntrctproptable, aes(x = SizeStrata, y = FndRaise_FedGvtCntrct_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+FedGvtCntrctproptable <- left_join(FedGvtCntrctproptable, FedGvtCntrctWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_FedGvtCntrct_Rcv - 1.96 * se,
+    CI_High = FndRaise_FedGvtCntrct_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+  )
+
+plot <- ggplot(FedGvtCntrctproptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_FedGvtCntrct_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = FedGvtCntrctproptable$x_center, 
+                     labels = FedGvtCntrctproptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received Fed Gov Contract",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -329,7 +406,7 @@ return(plot)
 Fed_contracts_stats <- function(data) {
   Fed_Cntrct_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -357,14 +434,26 @@ PrivGrntproptable <- svyby(
   na.rm = TRUE
 )
 
-PrivGrntproptable <- PrivGrntproptable |>
-  mutate(
-    CI_Low = FndRaise_PFGrnt_Rcv - 1.96 * se,
-    CI_High = FndRaise_PFGrnt_Rcv + 1.96 * se)
+PrivGrntWidth <- as.data.frame(svytotal(~SizeStrata, Priv_Grnt_design_seek))
+PrivGrntWidth$SizeStrata <- gsub("SizeStrata", "", rownames(PrivGrntWidth))
+names(PrivGrntWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(PrivGrntproptable, aes(x = SizeStrata, y = FndRaise_PFGrnt_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+PrivGrntproptable <- left_join(PrivGrntproptable, PrivGrntWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_PFGrnt_Rcv - 1.96 * se,
+    CI_High = FndRaise_PFGrnt_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+  )
+
+plot <- ggplot(PrivGrntproptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_PFGrnt_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = PrivGrntproptable$x_center, 
+                     labels = PrivGrntproptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received Private Grants",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -381,7 +470,7 @@ return(plot)
 Priv_grnt_stats <- function(data) {
   Priv_Grnt_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -409,14 +498,26 @@ CommunityGrntproptable <- svyby(
   na.rm = TRUE
 )
 
-CommunityGrntproptable <- CommunityGrntproptable |>
-  mutate(
-    CI_Low = FndRaise_CFGrnt_Rcv - 1.96 * se,
-    CI_High = FndRaise_CFGrnt_Rcv + 1.96 * se)
+CommunityGrntWidth <- as.data.frame(svytotal(~SizeStrata, Community_Grnt_design_seek))
+CommunityGrntWidth$SizeStrata <- gsub("SizeStrata", "", rownames(CommunityGrntWidth))
+names(CommunityGrntWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(CommunityGrntproptable, aes(x = SizeStrata, y = FndRaise_CFGrnt_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+CommunityGrntproptable <- left_join(CommunityGrntproptable, CommunityGrntWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_CFGrnt_Rcv - 1.96 * se,
+    CI_High = FndRaise_CFGrnt_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+  )
+
+plot <- ggplot(CommunityGrntproptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_CFGrnt_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = CommunityGrntproptable$x_center, 
+                     labels = CommunityGrntproptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received Community Foundation Grants",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -433,7 +534,7 @@ return(plot)
 Community_Grnt_stats <- function(data) {
   Community_Grnt_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -461,14 +562,26 @@ Donor_Fund_proptable <- svyby(
   na.rm = TRUE
 )
 
-Donor_Fund_proptable <- Donor_Fund_proptable |>
-  mutate(
-    CI_Low = FndRaise_DAF_Rcv - 1.96 * se,
-    CI_High = FndRaise_DAF_Rcv + 1.96 * se)
+DonorFundWidth <- as.data.frame(svytotal(~SizeStrata, Donor_Funds_design_seek))
+DonorFundWidth$SizeStrata <- gsub("SizeStrata", "", rownames(DonorFundWidth))
+names(DonorFundWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(Donor_Fund_proptable, aes(x = SizeStrata, y = FndRaise_DAF_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+DonorFundproptable <- left_join(DonorFundproptable, DonorFundWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_DAF_Rcv - 1.96 * se,
+    CI_High = FndRaise_DAF_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+  )
+
+plot <- ggplot(DonorFundproptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_DAF_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = DonorFundproptable$x_center, 
+                     labels = DonorFundproptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received Donor Advised Fudns",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -485,7 +598,7 @@ return(plot)
 Donor_Funds_Stats <- function(data){
   Donor_Funds_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -513,14 +626,26 @@ Corp_Fund_proptable <- svyby(
   na.rm = TRUE
 )
 
-Corp_Fund_proptable <- Corp_Fund_proptable |>
-  mutate(
-    CI_Low = FndRaise_Corp_Found_Grnt_Rcv - 1.96 * se,
-    CI_High = FndRaise_Corp_Found_Grnt_Rcv + 1.96 * se)
+CorpFundWidth <- as.data.frame(svytotal(~SizeStrata, Corp_Funds_design_seek))
+CorpFundWidth$SizeStrata <- gsub("SizeStrata", "", rownames(CorpFundWidth))
+names(CorpFundWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(Corp_Fund_proptable, aes(x = SizeStrata, y = FndRaise_Corp_Found_Grnt_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+Corp_Fund_proptable <- left_join(Corp_Fund_proptable, CorpFundWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_Corp_Found_Grnt_Rcv - 1.96 * se,
+    CI_High = FndRaise_Corp_Found_Grnt_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+  )
+
+plot <- ggplot(Corp_Fund_proptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_Corp_Found_Grnt_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = Corp_Fund_proptable$x_center, 
+                     labels = Corp_Fund_proptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received Corporate Fudns",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -537,7 +662,7 @@ return(plot)
 Corp_Funds_Stats <- function(data) {
   Corp_Funds_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -566,14 +691,26 @@ UW_Fund_proptable <- svyby(
   na.rm = TRUE
 )
 
-UW_Fund_proptable <- UW_Fund_proptable |>
-  mutate(
-    CI_Low = FndRaise_UntdWy_Rcv - 1.96 * se,
-    CI_High = FndRaise_UntdWy_Rcv + 1.96 * se)
+UWFundWidth <- as.data.frame(svytotal(~SizeStrata, UW_Funds_design_seek))
+UWFundWidth$SizeStrata <- gsub("SizeStrata", "", rownames(UWFundWidth))
+names(UWFundWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(UW_Fund_proptable, aes(x = SizeStrata, y = FndRaise_UntdWy_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+UW_Fund_proptable <- left_join(UW_Fund_proptable, UWFundWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_UntdWy_Rcv - 1.96 * se,
+    CI_High = FndRaise_UntdWy_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+  )
+
+plot <- ggplot(UW_Fund_proptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_UntdWy_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = UW_Fund_proptable$x_center, 
+                     labels = UW_Fund_proptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received United Way Funds",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -590,7 +727,7 @@ return(plot)
 UW_fund_Stats <- function(data) {
   UW_Funds_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -620,14 +757,26 @@ CFC_Fund_proptable <- svyby(
   na.rm = TRUE
 )
 
-CFC_Fund_proptable <- CFC_Fund_proptable |>
-  mutate(
-    CI_Low = FndRaise_CombFedCmpgn_Rcv - 1.96 * se,
-    CI_High = FndRaise_CombFedCmpgn_Rcv + 1.96 * se)
+CFCFundWidth <- as.data.frame(svytotal(~SizeStrata, CFC_Funds_design_seek))
+CFCFundWidth$SizeStrata <- gsub("SizeStrata", "", rownames(CFCFundWidth))
+names(CFCFundWidth)[1] <- "SampleSize" 
 
-plot <- ggplot(CFC_Fund_proptable, aes(x = SizeStrata, y = FndRaise_CombFedCmpgn_Rcv)) +
-  geom_col(fill = "#05bfff") +
-  geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+CFC_Fund_proptable <- left_join(CFC_Fund_proptable, CFCFundWidth, by = "SizeStrata") |>
+  mutate(
+    bar_width = (SampleSize / max(SampleSize)),
+    CI_Low = FndRaise_CombFedCmpgn_Rcv - 1.96 * se,
+    CI_High = FndRaise_CombFedCmpgn_Rcv + 1.96 * se,
+    SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+    x_center = as.numeric(SizeStrata), 
+    xmin = x_center - bar_width / 2, 
+    xmax = x_center + bar_width / 2
+  )
+
+plot <- ggplot(CFC_Fund_proptable) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_CombFedCmpgn_Rcv), fill = "#05bfff") +
+  geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+  scale_x_continuous(breaks = CFC_Fund_proptable$x_center, 
+                     labels = CFC_Fund_proptable$SizeStrata) +
   scale_y_continuous(labels = scales::percent_format()) +
   labs(title = "Proportion of NGO's Who Sought and Received Combined Federal Campaign Funds",
        subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -644,7 +793,7 @@ return(plot)
 CFC_Funds_Stats <- function(data) {
     CFC_Funds_design <- svydesign(
       ids = ~1,
-      data = YEAR_04_DATA_PUF,
+      data = data,
       weights = ~year4wt
     )
     
@@ -672,14 +821,26 @@ Other_Funds_Plot <- function(data) {
     na.rm = TRUE
   )
   
-  Other_Fund_proptable <- Other_Fund_proptable |>
-    mutate(
-      CI_Low = FndRaise_OthrGvngPrgrm_Rcv - 1.96 * se,
-      CI_High = FndRaise_OthrGvngPrgrm_Rcv + 1.96 * se)
+OtherFundWidth <- as.data.frame(svytotal(~SizeStrata, Other_Funds_design_seek))
+OtherFundWidth$SizeStrata <- gsub("SizeStrata", "", rownames(OtherFundWidth))
+  names(OtherFundWidth)[1] <- "SampleSize" 
   
- plot <- ggplot(Other_Fund_proptable, aes(x = SizeStrata, y = FndRaise_OthrGvngPrgrm_Rcv)) +
-    geom_col(fill = "#05bfff") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  Other_Fund_proptable <- left_join(Other_Fund_proptable, OtherFundWidth, by = "SizeStrata") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_OthrGvngPrgrm_Rcv - 1.96 * se,
+      CI_High = FndRaise_OthrGvngPrgrm_Rcv + 1.96 * se,
+      SizeStrata = factor(SizeStrata, levels = unique(SizeStrata)), 
+      x_center = as.numeric(SizeStrata), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(Other_Fund_proptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_OthrGvngPrgrm_Rcv), fill = "#05bfff") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = Other_Fund_proptable$x_center, 
+                       labels = Other_Fund_proptable$SizeStrata) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Other Funds",
          subtitle = "Based on Nonprofit Size (calculated by annual expense)",
@@ -696,7 +857,7 @@ Other_Funds_Plot <- function(data) {
 Other_Funds_Stats <- function(data) {
   Other_Funds_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -724,14 +885,26 @@ Sec_local_grant_plot <- function(data) {
     na.rm = TRUE
   )
   
-  LocGvtGrntproptable <- LocGvtGrntproptable |>
-    mutate(
-      CI_Low = FndRaise_LocGvtGrnt_Rcv - 1.96 * se,
-      CI_High = FndRaise_LocGvtGrnt_Rcv + 1.96 * se)
+  LocGvtGrntWidth <- as.data.frame(svytotal(~ntmaj12, Loc_Grnt_design_seek))
+  LocGvtGrntWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(LocGvtGrntWidth))
+  names(LocGvtGrntWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(LocGvtGrntproptable, aes(x = ntmaj12, y = FndRaise_LocGvtGrnt_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  LocGvtGrntproptable <- left_join(LocGvtGrntproptable, LocGvtGrntWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_LocGvtGrnt_Rcv - 1.96 * se,
+      CI_High = FndRaise_LocGvtGrnt_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(LocGvtGrntproptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_LocGvtGrnt_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = LocGvtGrntproptable$x_center, 
+                       labels = LocGvtGrntproptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Local Gov Grant",
          subtitle = "Based on Sector",
@@ -777,14 +950,26 @@ Sec_State_grant_plot <- function(data) {
     na.rm = TRUE
   )
   
-  StateGvtGrntproptable <- StateGvtGrntproptable |>
-    mutate(
-      CI_Low = FndRaise_StateGvtGrnt_Rcv - 1.96 * se,
-      CI_High = FndRaise_StateGvtGrnt_Rcv + 1.96 * se)
+StateGvtGrntWidth <- as.data.frame(svytotal(~ntmaj12, State_Grnt_design_seek))
+StateGvtGrntWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(StateGvtGrntWidth))
+  names(StateGvtGrntWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(StateGvtGrntproptable, aes(x = ntmaj12, y = FndRaise_StateGvtGrnt_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  StateGvtGrntproptable <- left_join(StateGvtGrntproptable, StateGvtGrntWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_StateGvtGrnt_Rcv - 1.96 * se,
+      CI_High = FndRaise_StateGvtGrnt_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(StateGvtGrntproptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_StateGvtGrnt_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = StateGvtGrntproptable$x_center, 
+                       labels = StateGvtGrntproptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received State Gov Grant",
          subtitle = "Based on Sector",
@@ -803,7 +988,7 @@ Sec_State_grant_plot <- function(data) {
 Sec_State_grants_stats <- function(data) {
   State_Grnt_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -832,14 +1017,26 @@ Sec_Fed_grant_plot <- function(data) {
     na.rm = TRUE
   )
   
-  FedGvtGrntproptable <- FedGvtGrntproptable |>
-    mutate(
-      CI_Low = FndRaise_FedGvtGrnt_Rcv - 1.96 * se,
-      CI_High = FndRaise_FedGvtGrnt_Rcv + 1.96 * se)
+FedGvtGrntWidth <- as.data.frame(svytotal(~ntmaj12, Fed_Grnt_design_seek))
+FedGvtGrntWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(FedGvtGrntWidth))
+  names(FedGvtGrntWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(FedGvtGrntproptable, aes(x = ntmaj12, y = FndRaise_FedGvtGrnt_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  FedGvtGrntproptable <- left_join(FedGvtGrntproptable, FedGvtGrntWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_FedGvtGrnt_Rcv - 1.96 * se,
+      CI_High = FndRaise_FedGvtGrnt_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(FedGvtGrntproptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_FedGvtGrnt_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = FedGvtGrntproptable$x_center, 
+                       labels = FedGvtGrntproptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Fed Gov Grant",
          subtitle = "Based on Sector",
@@ -856,7 +1053,7 @@ Sec_Fed_grant_plot <- function(data) {
 Sec_Fed_grant_stats <- function(data) {
   Fed_Grnt_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   Fed_Grnt_design_seek <- subset(Fed_Grnt_design, FndRaise_FedGvtGrnt_Seek == 1)
@@ -883,14 +1080,26 @@ Sec_Local_contract_plot <- function(data) {
     na.rm = TRUE
   )
   
-  LocGvtCntrctproptable <- LocGvtCntrctproptable |>
-    mutate(
-      CI_Low = FndRaise_LocGvtCntrct_Rcv - 1.96 * se,
-      CI_High = FndRaise_LocGvtCntrct_Rcv + 1.96 * se)
+LocGvtCntrctWidth <- as.data.frame(svytotal(~ntmaj12, Loc_Cntrct_design_seek))
+LocGvtCntrctWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(LocGvtCntrctWidth))
+  names(LocGvtCntrctWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(LocGvtCntrctproptable, aes(x = ntmaj12, y = FndRaise_LocGvtCntrct_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  LocGvtCntrctproptable <- left_join(LocGvtCntrctproptable, LocGvtCntrctWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_LocGvtCntrct_Rcv - 1.96 * se,
+      CI_High = FndRaise_LocGvtCntrct_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(LocGvtCntrctproptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_LocGvtCntrct_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = LocGvtCntrctproptable$x_center, 
+                       labels = LocGvtCntrctproptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Local Gov Contract",
          subtitle = "Based on Sector",
@@ -936,14 +1145,26 @@ Sec_State_contract_plot <- function(data) {
     na.rm = TRUE
   )
   
-  StateGvtCntrctproptable <- StateGvtCntrctproptable |>
-    mutate(
-      CI_Low = FndRaise_StateGvtCntrct_Rcv - 1.96 * se,
-      CI_High = FndRaise_StateGvtCntrct_Rcv + 1.96 * se)
+StateGvtCntrctWidth <- as.data.frame(svytotal(~ntmaj12, State_Cntrct_design_seek))
+StateGvtCntrctWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(StateGvtCntrctWidth))
+  names(StateGvtCntrctWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(StateGvtCntrctproptable, aes(x = ntmaj12, y = FndRaise_StateGvtCntrct_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  StateGvtCntrctproptable <- left_join(StateGvtCntrctproptable, StateGvtCntrctWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_StateGvtCntrct_Rcv - 1.96 * se,
+      CI_High = FndRaise_StateGvtCntrct_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(StateGvtCntrctproptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_StateGvtCntrct_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = StateGvtCntrctproptable$x_center, 
+                       labels = StateGvtCntrctproptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received State Gov Contract",
          subtitle = "Based on Sector",
@@ -960,7 +1181,7 @@ Sec_State_contract_plot <- function(data) {
 Sec_State_contract_stats <- function(data) {
   State_Cntrct_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -988,14 +1209,26 @@ Sec_Fed_contracts_plot <- function(data) {
     na.rm = TRUE
   )
   
-  FedGvtCntrctproptable <- FedGvtCntrctproptable |>
-    mutate(
-      CI_Low = FndRaise_FedGvtCntrct_Rcv - 1.96 * se,
-      CI_High = FndRaise_FedGvtCntrct_Rcv + 1.96 * se)
+  FedGvtCntrctWidth <- as.data.frame(svytotal(~ntmaj12, Fed_Cntrct_design_seek))
+  FedGvtCntrctWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(FedGvtCntrctWidth))
+  names(FedGvtCntrctWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(FedGvtCntrctproptable, aes(x = ntmaj12, y = FndRaise_FedGvtCntrct_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  FedGvtCntrctproptable <- left_join(FedGvtCntrctproptable, FedGvtCntrctWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_FedGvtCntrct_Rcv - 1.96 * se,
+      CI_High = FndRaise_FedGvtCntrct_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(FedGvtCntrctproptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_FedGvtCntrct_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = FedGvtCntrctproptable$x_center, 
+                       labels = FedGvtCntrctproptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Fed Gov Contract",
          subtitle = "Based on Sector",
@@ -1012,7 +1245,7 @@ Sec_Fed_contracts_plot <- function(data) {
 Sec_Fed_contracts_stats <- function(data) {
   Fed_Cntrct_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -1040,14 +1273,26 @@ Sec_Priv_grnt_plot <- function(data) {
     na.rm = TRUE
   )
   
-  PrivGrntproptable <- PrivGrntproptable |>
-    mutate(
-      CI_Low = FndRaise_PFGrnt_Rcv - 1.96 * se,
-      CI_High = FndRaise_PFGrnt_Rcv + 1.96 * se)
+ PrivGrntWidth <- as.data.frame(svytotal(~ntmaj12, Priv_Grnt_design_seek))
+ PrivGrntWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(PrivGrntWidth))
+  names(PrivGrntWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(PrivGrntproptable, aes(x = ntmaj12, y = FndRaise_PFGrnt_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  PrivGrntproptable <- left_join(PrivGrntproptable, PrivGrntWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_PFGrnt_Rcv - 1.96 * se,
+      CI_High = FndRaise_PFGrnt_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(PrivGrntproptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_PFGrnt_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = PrivGrntproptable$x_center, 
+                       labels = PrivGrntproptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Private Grants",
          subtitle = "Based on Sector",
@@ -1064,7 +1309,7 @@ Sec_Priv_grnt_plot <- function(data) {
 Sec_Priv_grnt_stats <- function(data) {
   Priv_Grnt_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -1092,14 +1337,26 @@ Sec_Community_Grnt_Plot <- function(data) {
     na.rm = TRUE
   )
   
-  CommunityGrntproptable <- CommunityGrntproptable |>
-    mutate(
-      CI_Low = FndRaise_CFGrnt_Rcv - 1.96 * se,
-      CI_High = FndRaise_CFGrnt_Rcv + 1.96 * se)
+  CommunityGrntWidth <- as.data.frame(svytotal(~ntmaj12, Community_Grnt_design_seek))
+  CommunityGrntWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(CommunityGrntWidth))
+  names(CommunityGrntWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(CommunityGrntproptable, aes(x = ntmaj12, y = FndRaise_CFGrnt_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  CommunityGrntproptable <- left_join(CommunityGrntproptable, CommunityGrntWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_CFGrnt_Rcv - 1.96 * se,
+      CI_High = FndRaise_CFGrnt_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(CommunityGrntproptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_CFGrnt_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = CommunityGrntproptable$x_center, 
+                       labels = CommunityGrntproptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Community Foundation Grants",
          subtitle = "Based on Sector",
@@ -1125,11 +1382,11 @@ Sec_Community_Grnt_stats <- function(data) {
   return(chisq_result) 
 }
 
-#stats and graph for donar advised funds
+#stats and graph for donor advised funds
 Sec_Donor_Funds_Plot <- function(data) {
   Donor_Funds_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -1144,14 +1401,26 @@ Sec_Donor_Funds_Plot <- function(data) {
     na.rm = TRUE
   )
   
-  Donor_Fund_proptable <- Donor_Fund_proptable |>
-    mutate(
-      CI_Low = FndRaise_DAF_Rcv - 1.96 * se,
-      CI_High = FndRaise_DAF_Rcv + 1.96 * se)
+ DonorFundWidth <- as.data.frame(svytotal(~ntmaj12, Donor_Funds_design_seek))
+ DonorFundWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(DonorFundWidth))
+  names(DonorFundWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(Donor_Fund_proptable, aes(x = ntmaj12, y = FndRaise_DAF_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  Donor_Fund_proptable <- left_join(Donor_Fund_proptable, DonorFundWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_DAF_Rcv - 1.96 * se,
+      CI_High = FndRaise_DAF_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(Donor_Fund_proptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_DAF_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = Donor_Fund_proptable$x_center, 
+                       labels = Donor_Fund_proptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Donor Advised Fudns",
          subtitle = "Based on Sector",
@@ -1168,7 +1437,7 @@ Sec_Donor_Funds_Plot <- function(data) {
 Sec_Donor_Funds_Stats <- function(data){
   Donor_Funds_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -1196,14 +1465,26 @@ Sec_Corp_Funds_Plot <- function(data) {
     na.rm = TRUE
   )
   
-  Corp_Fund_proptable <- Corp_Fund_proptable |>
-    mutate(
-      CI_Low = FndRaise_Corp_Found_Grnt_Rcv - 1.96 * se,
-      CI_High = FndRaise_Corp_Found_Grnt_Rcv + 1.96 * se)
+  CorpFundWidth <- as.data.frame(svytotal(~ntmaj12, Corp_Funds_design_seek))
+  CorpFundWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(CorpFundWidth))
+  names(CorpFundWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(Corp_Fund_proptable, aes(x = ntmaj12, y = FndRaise_Corp_Found_Grnt_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  Corp_Fund_proptable <- left_join(Corp_Fund_proptable, CorpFundWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_Corp_Found_Grnt_Rcv - 1.96 * se,
+      CI_High = FndRaise_Corp_Found_Grnt_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(Corp_Fund_proptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_Corp_Found_Grnt_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = Corp_Fund_proptable$x_center, 
+                       labels = Corp_Fund_proptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Corporate Fudns",
          subtitle = "Based on Sector",
@@ -1220,7 +1501,7 @@ Sec_Corp_Funds_Plot <- function(data) {
 Sec_Corp_Funds_Stats <- function(data) {
   Corp_Funds_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -1249,14 +1530,26 @@ Sec_UW_fund_Plot <- function(data) {
     na.rm = TRUE
   )
   
-  UW_Fund_proptable <- UW_Fund_proptable |>
-    mutate(
-      CI_Low = FndRaise_UntdWy_Rcv - 1.96 * se,
-      CI_High = FndRaise_UntdWy_Rcv + 1.96 * se)
+  UWFundWidth <- as.data.frame(svytotal(~ntmaj12, UW_Funds_design_seek))
+  UWFundWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(UWFundWidth))
+  names(UWFundWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(UW_Fund_proptable, aes(x = ntmaj12, y = FndRaise_UntdWy_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  UW_Fund_proptable <- left_join(UW_Fund_proptable, UWFundWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_UntdWy_Rcv - 1.96 * se,
+      CI_High = FndRaise_UntdWy_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(UW_Fund_proptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_UntdWy_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = UW_Fund_proptable$x_center, 
+                       labels = UW_Fund_proptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received United Way Funds",
          subtitle = "Based on Sector",
@@ -1273,7 +1566,7 @@ Sec_UW_fund_Plot <- function(data) {
 Sec_UW_fund_Stats <- function(data) {
   UW_Funds_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -1303,14 +1596,26 @@ Sec_CFC_Funds_Plot <- function(data) {
     na.rm = TRUE
   )
   
-  CFC_Fund_proptable <- CFC_Fund_proptable |>
-    mutate(
-      CI_Low = FndRaise_CombFedCmpgn_Rcv - 1.96 * se,
-      CI_High = FndRaise_CombFedCmpgn_Rcv + 1.96 * se)
+  CFCFundWidth <- as.data.frame(svytotal(~ntmaj12, CFC_Funds_design_seek))
+  CFCFundWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(CFCFundWidth))
+  names(CFCFundWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(CFC_Fund_proptable, aes(x = ntmaj12, y = FndRaise_CombFedCmpgn_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  CFC_Fund_proptable <- left_join(CFC_Fund_proptable, CFCFundWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_CombFedCmpgn_Rcv - 1.96 * se,
+      CI_High = FndRaise_CombFedCmpgn_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(CFC_Fund_proptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_CombFedCmpgn_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = CFC_Fund_proptable$x_center, 
+                       labels = CFC_Fund_proptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Combined Federal Campaign Funds",
          subtitle = "Based on Sector",
@@ -1327,7 +1632,7 @@ Sec_CFC_Funds_Plot <- function(data) {
 Sec_CFC_Funds_Stats <- function(data) {
   CFC_Funds_design <- svydesign(
     ids = ~1,
-    data = YEAR_04_DATA_PUF,
+    data = data,
     weights = ~year4wt
   )
   
@@ -1355,14 +1660,26 @@ Sec_Other_Funds_Plot <- function(data) {
     na.rm = TRUE
   )
   
-  Other_Fund_proptable <- Other_Fund_proptable |>
-    mutate(
-      CI_Low = FndRaise_OthrGvngPrgrm_Rcv - 1.96 * se,
-      CI_High = FndRaise_OthrGvngPrgrm_Rcv + 1.96 * se)
+  OtherFundWidth <- as.data.frame(svytotal(~ntmaj12, Other_Funds_design_seek))
+  OtherFundWidth$ntmaj12 <- gsub("ntmaj12", "", rownames(OtherFundWidth))
+  names(OtherFundWidth)[1] <- "SampleSize" 
   
-  plot <- ggplot(Other_Fund_proptable, aes(x = ntmaj12, y = FndRaise_OthrGvngPrgrm_Rcv)) +
-    geom_col(fill = "#fb602b") +
-    geom_errorbar(aes(ymin = CI_Low, ymax = CI_High)) +
+  Other_Fund_proptable <- left_join(Other_Fund_proptable, OtherFundWidth, by = "ntmaj12") |>
+    mutate(
+      bar_width = (SampleSize / max(SampleSize)),
+      CI_Low = FndRaise_OthrGvngPrgrm_Rcv - 1.96 * se,
+      CI_High = FndRaise_OthrGvngPrgrm_Rcv + 1.96 * se,
+      ntmaj12 = factor(ntmaj12, levels = unique(ntmaj12)), 
+      x_center = as.numeric(ntmaj12), 
+      xmin = x_center - bar_width / 2, 
+      xmax = x_center + bar_width / 2
+    )
+  
+  plot <- ggplot(Other_Fund_proptable) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = 0, ymax = FndRaise_OthrGvngPrgrm_Rcv), fill = "#fb602b") +
+    geom_errorbar(aes(x = x_center, ymin = CI_Low, ymax = CI_High), width = 0.1) +
+    scale_x_continuous(breaks = Other_Fund_proptable$x_center, 
+                       labels = Other_Fund_proptable$ntmaj12) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = "Proportion of NGO's Who Sought and Received Other Funds",
          subtitle = "Based on Sector",
@@ -1415,28 +1732,6 @@ ui <- fluidPage(
         verbatimTextOutput("size_stats"),
         style = "font-size: 60px; width: 800px"
       )
-      )
-    ),
-    tabPanel(
-      title = "Region",
-      selectInput("Region_funding_type", "Select Funding Type:",
-                  choices = c("Local Government Grants",
-                              "State Government Grants",
-                              "Federal Government Grants",
-                              "Local Government Contracts",
-                              "State Government Contracts",
-                              "Federal Government Contracts",
-                              "Private Grants",
-                              "Community Foundation Grants",
-                              "Donor Advised Funds",
-                              "Corporate Grants and Donations",
-                              "United Way Funding",
-                              "Combined Federal Funding",
-                              "Other Funding"
-                  )),
-      mainPanel(
-        plotOutput("Region_plot"),
-        verbatimTextOutput("Region_stats")
       )
     ),
     tabPanel(
@@ -1501,42 +1796,6 @@ server <- function(input, output) {
       "Combined Federal Funding" = CFC_Funds_Stats(YEAR_04_DATA_PUF),
       "Other Funding" = Other_Funds_Stats(YEAR_04_DATA_PUF)
    )
-  })
-
-  output$Region_plot <- renderPlot({
-    switch(input$Region_funding_type,
-           "Local Government Grants" = Reg_local_grant_plot(YEAR_04_DATA_PUF),
-           "State Government Grants" = Reg_State_grant_plot(YEAR_04_DATA_PUF),
-           "Federal Government Grants" = Reg_Fed_grant_plot(YEAR_04_DATA_PUF),
-           "Local Government Contracts" = Reg_Local_contract_plot(YEAR_04_DATA_PUF),
-           "State Government Contracts" = Reg_State_contract_plot(YEAR_04_DATA_PUF),
-           "Federal Government Contracts" = Reg_Fed_contracts_plot(YEAR_04_DATA_PUF),
-           "Private Grants" = Reg_Priv_grnt_plot(YEAR_04_DATA_PUF),
-           "Community Foundation Grants" = Reg_Community_Grnt_Plot(YEAR_04_DATA_PUF),
-           "Donor Advised Funds" = Reg_Donor_Funds_Plot(YEAR_04_DATA_PUF),
-           "Corporate Grants and Donations" = Reg_Corp_Funds_Plot(YEAR_04_DATA_PUF),
-           "United Way Funding" = Reg_UW_fund_Plot(YEAR_04_DATA_PUF),
-           "Combined Federal Funding" = Reg_CFC_Funds_Plot(YEAR_04_DATA_PUF),
-           "Other Funding" = Reg_Other_Funds_Plot(YEAR_04_DATA_PUF)
-    )
-  })
-  
-  output$Region_stats <- renderPrint({
-    switch(input$Region_funding_type,
-           "Local Government Grants" = Reg_local_grants_stats(YEAR_04_DATA_PUF),
-           "State Government Grants" = Reg_State_grants_stats(YEAR_04_DATA_PUF),
-           "Federal Government Grants" = Reg_Fed_grant_stats(YEAR_04_DATA_PUF),
-           "Local Government Contracts" = Reg_Local_contract_stats(YEAR_04_DATA_PUF),
-           "State Government Contracts" = Reg_State_contract_stats(YEAR_04_DATA_PUF),
-           "Federal Government Contracts" = Reg_Fed_contracts_stats(YEAR_04_DATA_PUF),
-           "Private Grants" = Reg_Priv_grnt_stats(YEAR_04_DATA_PUF),
-           "Community Foundation Grants" = Reg_Community_Grnt_stats(YEAR_04_DATA_PUF),
-           "Donor Advised Funds" = Reg_Donor_Funds_Stats(YEAR_04_DATA_PUF),
-           "Corporate Grants and Donations" = Reg_Corp_Funds_Stats(YEAR_04_DATA_PUF),
-           "United Way Funding" = Reg_UW_fund_Stats(YEAR_04_DATA_PUF),
-           "Combined Federal Funding" = Reg_CFC_Funds_Stats(YEAR_04_DATA_PUF),
-           "Other Funding" = Reg_Other_Funds_Stats(YEAR_04_DATA_PUF)
-    )
   })
   
   output$sector_plot <- renderPlot({
